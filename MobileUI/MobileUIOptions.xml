@@ -1,0 +1,60 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.blizzard.com/wow/ui/
+..\FrameXML\UI.xsd">
+
+    <Frame name="MobileUIOptionsPanel" parent="UIParent" hidden="true">
+        <Scripts>
+            <OnLoad>
+                self.name = "MobileUI"
+                InterfaceOptions_AddCategory(self)
+            </OnLoad>
+            <OnShow function="MobileUI_OptionsOnShow"/>
+        </Scripts>
+
+        <Layers>
+            <Layer level="ARTWORK">
+                <FontString name="$parentTitle" inherits="GameFontNormalLarge" text="MobileUI">
+                    <Anchors>
+                        <Anchor point="TOPLEFT">
+                            <Offset><AbsDimension x="16" y="-16"/></Offset>
+                        </Anchor>
+                    </Anchors>
+                </FontString>
+                <FontString name="$parentSubTitle" inherits="GameFontHighlightSmall"
+                            text="Scale the entire UI for mobile screens.">
+                    <Anchors>
+                        <Anchor point="TOPLEFT" relativeTo="$parentTitle" relativePoint="BOTTOMLEFT">
+                            <Offset><AbsDimension x="0" y="-8"/></Offset>
+                        </Anchor>
+                    </Anchors>
+                    <Size><AbsDimension x="320" y="30"/></Size>
+                </FontString>
+            </Layer>
+        </Layers>
+
+        <Frames>
+            <Slider name="$parentScaleSlider" inherits="OptionsSliderTemplate">
+                <Size><AbsDimension x="240" y="16"/></Size>
+                <Anchors>
+                    <Anchor point="TOPLEFT" relativeTo="$parentSubTitle" relativePoint="BOTTOMLEFT">
+                        <Offset><AbsDimension x="0" y="-20"/></Offset>
+                    </Anchor>
+                </Anchors>
+                <Scripts>
+                    <OnLoad>
+                        _G[self:GetName().."Text"]:SetText("UI Scale")
+                        _G[self:GetName().."High"]:SetText("3.0")
+                        _G[self:GetName().."Low"]:SetText("1.0")
+                        self:SetMinMaxValues(1.0, 3.0)
+                        self:SetValueStep(0.05)
+                    </OnLoad>
+                    <OnValueChanged>
+                        MobileUI_OptionsOnScaleChanged(self:GetValue())
+                    </OnValueChanged>
+                </Scripts>
+            </Slider>
+        </Frames>
+    </Frame>
+
+</Ui>
