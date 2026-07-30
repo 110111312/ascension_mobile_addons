@@ -4,11 +4,17 @@ WoW 3.3.5a addons for [Ascension WoW](https://ascension.gg), optimized for mobil
 
 ## MobileUI
 
-Scales up the entire WoW UI for mobile screens.
+Scales up the entire WoW UI for mobile screens, and lowers mouse-look sensitivity for better touch/swipe control.
 
 - `/mui <1.0-3.0>` — set UI scale (e.g., `/mui 1.5`)
-- `/mui` — show current scale
-- Interface → MobileUI → UI Scale slider
+- `/mui look <10-90>` — set mouse look speed (e.g., `/mui look 30`; lower = less sensitive, longer swipe to turn)
+- `/mui chat` — toggle chat UI on/off
+- `/mui` — show current state
+- Interface → MobileUI → UI Scale slider + Mouse Look Speed slider
+
+### Mouse Look Speed
+
+When streaming via Artemis multi-touch, swiping on the phone maps to mouse-look (right-click-drag) in WoW. WoW's built-in slider only goes 90–270, so 90 (the minimum) is still too sensitive for phone — a short swipe spins the camera too far. MobileUI lets you go **below 90** (down to 10), so you can swipe longer to look around less.
 
 ## MoveAnything (reference)
 

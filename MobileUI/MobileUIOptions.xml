@@ -54,6 +54,27 @@
                     </OnValueChanged>
                 </Scripts>
             </Slider>
+
+            <Slider name="$parentLookSpeedSlider" inherits="OptionsSliderTemplate">
+                <Size><AbsDimension x="240" y="16"/></Size>
+                <Anchors>
+                    <Anchor point="TOPLEFT" relativeTo="$parentScaleSlider" relativePoint="BOTTOMLEFT">
+                        <Offset><AbsDimension x="0" y="-32"/></Offset>
+                    </Anchor>
+                </Anchors>
+                <Scripts>
+                    <OnLoad>
+                        _G[self:GetName().."Text"]:SetText("Mouse Look Speed")
+                        _G[self:GetName().."High"]:SetText("90")
+                        _G[self:GetName().."Low"]:SetText("10")
+                        self:SetMinMaxValues(10, 90)
+                        self:SetValueStep(5)
+                    </OnLoad>
+                    <OnValueChanged>
+                        MobileUI_OptionsOnLookSpeedChanged(self:GetValue())
+                    </OnValueChanged>
+                </Scripts>
+            </Slider>
         </Frames>
     </Frame>
 
