@@ -12,7 +12,19 @@ local ACTION_BUTTONS = {
     [13] = { size = 51, x = -161, y = 277 }, [14] = { size = 51, x = -86,  y = 298 },
     [15] = { size = 51, x = -20,  y = 316 },
 }
-local ACTION2_BUTTONS = { 13, 14, 15 }
+-- Scatter spots fed from MultiBarBottomLeft (bottom-left bar; slots 61-65 on
+-- this Ascension client while the buttons stay attached to it).
+-- Artemis cannot create virtual keys for "-" and "=", so scatter spots 11/12
+-- (where ActionButton11/12 would sit) are filled by bottom-left bar buttons 4
+-- and 5, bound to T and F — the exact keys the Artemis preset sends at those
+-- spots, so the icon matches the action. Q/E/R (bar buttons 1-3) keep 13-15.
+local ACTION2_BUTTONS = {
+    { scatter = 11, src = 4 },  -- keybind T
+    { scatter = 12, src = 5 },  -- keybind F
+    { scatter = 13, src = 1 },  -- keybind Q
+    { scatter = 14, src = 2 },  -- keybind E
+    { scatter = 15, src = 3 },  -- keybind R
+}
 local MICRO_BUTTONS = {
     "CharacterMicroButton", "SpellbookMicroButton", "TalentMicroButton",
     "AchievementMicroButton", "QuestLogMicroButton", "SocialsMicroButton",
@@ -145,10 +157,10 @@ local function SaveOriginals()
             }
         end
     end
-    -- Save MultiBarBottomLeft buttons (action bar 2) for buttons 13-15
+    -- Save MultiBarBottomLeft buttons (action bar 2) that feed scatter spots
     saved.actions2 = {}
-    for _, i in ipairs(ACTION2_BUTTONS) do
-        local src = i - 12
+    for _, pair in ipairs(ACTION2_BUTTONS) do
+        local i, src = pair.scatter, pair.src
         local btn = _G["MultiBarBottomLeftButton" .. src]
         if btn then
             local hotkey = _G["MultiBarBottomLeftButton" .. src .. "HotKey"]
@@ -193,10 +205,16 @@ local function SaveOriginals()
     -- ChatFrame1: original position, so layout revert restores it exactly
     local cf = _G["ChatFrame1"]
     if cf then saved.chatFrame = { points = SavePoints(cf) } end
-    -- Save MultiBarBottomLeft bar position (we park it off-screen while the
-    -- layout is active; the scatter buttons must stay attached to it)
-    local mbl = _G["MultiBarBottomLeft"]
-    if mbl then saved.multibarBottomLeft = { points = SavePoints(mbl) } end
+    -- Save shown state of the bottom-left bar's tail buttons (6-12). The bar
+    -- is horizontal and its buttons are anchor-chained (each LEFT of the
+    -- previous button's RIGHT), so buttons 6-12 chain off the last scatter
+    -- button and would render on screen; the layout hides them, revert
+    -- restores them.
+    saved.bar2tail = {}
+    for i = 6, 12 do
+        local b = _G["MultiBarBottomLeftButton" .. i]
+        if b then saved.bar2tail[i] = b:IsShown() end
+    end
 end
 
 -- 1. Map
@@ -398,7 +416,10 @@ end
 local function ApplyActionBar()
     MobileUI_Debug("ApplyActionBar: starting")
     HOTKEY_FRAMES = {}  -- reset list
-    for i = 1, 12 do
+    -- Main bar buttons 1-10 (keys 1-0). ActionButton11/12 ("-" and "=") are
+    -- intentionally NOT scattered: Artemis has no "-"/"=" virtual keys, so
+    -- those two spots are filled by bottom-left bar buttons 4/5 (T/F) below.
+    for i = 1, 10 do
         local btn = _G["ActionButton" .. i]
         if btn then
             local cfg = ACTION_BUTTONS[i]
@@ -429,14 +450,19 @@ local function ApplyActionBar()
             MobileUI_Debug("  ActionButton" .. i .. " NOT FOUND")
         end
     end
-    -- Action bar 2 (MultiBarBottomLeft): buttons 13-15
+    -- Action bar 2 (MultiBarBottomLeft): scatter spots 11-15
+    -- Spots 11/12 are NOT ActionButton11/12 ("-" and "="): Artemis has no
+    -- virtual keys for "-"/"=", so those spots are filled by bottom-left bar
+    -- buttons 4/5, bound to T and F — exactly the keys the Artemis preset
+    -- sends at those spots, so the icon matches the action. Q/E/R (bar buttons
+    -- 1-3) keep spots 13-15.
     -- IMPORTANT: do NOT reparent these buttons. This Ascension client resolves
     -- a button's slot from the bar it is attached to (MultiBarBottomLeft =
-    -- slots 61-63 here). Reparenting to UIParent makes them fall back to their
-    -- id (1-3) and collide with the main bar. Reposition via UIParent anchors
+    -- slots 61-65 here). Reparenting to UIParent makes them fall back to their
+    -- id (1-5) and collide with the main bar. Reposition via UIParent anchors
     -- instead; the bar frame itself is parked off-screen by ApplyHideFrames.
-    for _, i in ipairs(ACTION2_BUTTONS) do
-        local src = i - 12
+    for _, pair in ipairs(ACTION2_BUTTONS) do
+        local i, src = pair.scatter, pair.src
         local btn = _G["MultiBarBottomLeftButton" .. src]
         if btn then
             local cfg = ACTION_BUTTONS[i]
@@ -465,9 +491,17 @@ local function ApplyActionBar()
             MobileUI_Debug("  MultiBarBottomLeftButton" .. src .. " NOT FOUND")
         end
     end
+    MobileUILayout.EnsureFlipWatcher()
+    MobileUILayout.ApplyFlip()
 end
 local function RevertActionBar()
     HOTKEY_FRAMES = {}  -- stop guard from hiding hotkeys/names
+    -- Clear any actionpage mirroring the flip follower applied, so the stock
+    -- bar is left exactly as the client manages it.
+    for i = 1, 12 do
+        local btn = _G["ActionButton" .. i]
+        if btn then pcall(function() btn:SetAttribute("actionpage", nil) end) end
+    end
     for i = 1, 12 do
         local btn = _G["ActionButton" .. i]
         local sv = saved.actions and saved.actions[i]
@@ -494,9 +528,9 @@ local function RevertActionBar()
             if nm and sv.nameShown then nm:Show() end
         end
     end
-    -- Revert MultiBarBottomLeft buttons (13-15)
-    for _, i in ipairs(ACTION2_BUTTONS) do
-        local src = i - 12
+    -- Revert MultiBarBottomLeft buttons (spots 11-15)
+    for _, pair in ipairs(ACTION2_BUTTONS) do
+        local i, src = pair.scatter, pair.src
         local btn = _G["MultiBarBottomLeftButton" .. src]
         local sv = saved.actions2 and saved.actions2[i]
         if btn and sv then
@@ -522,6 +556,109 @@ local function RevertActionBar()
             if nm and sv.nameShown then nm:Show() end
         end
     end
+end
+
+-- 4b. Stance/stealth flip follower — mirror the bar the client targets
+-- The Ascension client resolves keypresses internally (C-side): in stealth
+-- '-' hits the stealth bar, which on this client is the BONUS bar
+-- (GetBonusBarOffset() = 1 -> page 7, slots 73-84) — NOT an action-bar page.
+-- GetActionBarPage() stays pinned at 1 and pages 2-5 are empty; the default
+-- UI's "stealth bar" is BonusActionBarFrame. The reparented scatter buttons
+-- never recompute on their own, so display and click stay on page 1 while
+-- keypresses go elsewhere. Driven by a 0.25s state poll in guardFrame's
+-- OnUpdate (this client fires no page/shapeshift events), the follower
+-- mirrors the client's choice by setting the 'actionpage' attribute on the
+-- buttons (self attribute overrides the parent chain) so display AND click
+-- follow the same slots the keypress targets. The target page is derived
+-- generically from the client (see GetFlipPage): page flip, bonus offset,
+-- stealth, then a small form fallback table.
+-- Attribute writes are protected during combat, so those are deferred like
+-- the rest of the layout (PLAYER_REGEN_ENABLED).
+local flipFrame
+local flipPending -- true => attribute mirror deferred until out of combat
+
+local FLIP_PAGE_BY_CLASS = {
+    ROGUE   = { [1] = 2, [2] = 2 },           -- stealth (form 1 or 2) -> page 2
+    WARRIOR = { [1] = 3, [2] = 4, [3] = 5 },  -- battle / defensive / berserker
+}
+
+-- The CLIENT owns the stance->bar mapping; we only mirror it. Generic rules
+-- in priority order — no per-class guessing for normal cases:
+--   1. Stock 3.3.5a: entering a form flips GetActionBarPage() -> follow it.
+--   2. This client: entering stealth/stance shows the BONUS bar
+--      (GetBonusBarOffset() > 0) — the exact condition stock
+--      BonusActionBarFrame uses to show itself -> mirror it via the
+--      actionpage attribute (bonus page = NUM_ACTIONBAR_PAGES + offset).
+--   3. Fallbacks only when neither moves: IsStealthed() -> stock page 2,
+--      then the form table below for classes with stable mappings.
+local function GetFlipPage()
+    local page = GetActionBarPage()
+    if page and page > 1 then return page end
+    local off = GetBonusBarOffset()
+    if off and off > 0 then return (NUM_ACTIONBAR_PAGES or 6) + off end
+    if IsStealthed() then return 2 end
+    local form = GetShapeshiftForm() or 0
+    if form == 0 then return 1 end
+    local _, class = UnitClass("player")
+    local map = FLIP_PAGE_BY_CLASS[class]
+    if map and map[form] then return map[form] end
+    return 1
+end
+
+local function RefreshScatterButtons()
+    for i = 1, 12 do
+        local btn = _G["ActionButton" .. i]
+        if btn then
+            local ok, err = pcall(ActionButton_UpdateAction, btn)
+            if not ok then
+                MobileUI_Debug("Flip: ActionButton" .. i .. " update failed: " .. tostring(err))
+            end
+        end
+    end
+end
+
+function MobileUILayout.ApplyFlip()
+    if not MobileDB or not MobileDB.layoutEnabled then return end
+    if InCombatLockdown() then
+        flipPending = true -- re-apply on PLAYER_REGEN_ENABLED
+        return
+    end
+    flipPending = nil
+    local page = GetActionBarPage()
+    local fp = GetFlipPage()
+    if page == 1 then
+        -- Client keeps the Lua page pinned: mirror the flip via the
+        -- actionpage attribute (self attribute overrides the parent chain).
+        for i = 1, 12 do
+            local btn = _G["ActionButton" .. i]
+            if btn then
+                local ok, err = pcall(function()
+                    if fp > 1 then btn:SetAttribute("actionpage", fp)
+                    else btn:SetAttribute("actionpage", nil) end
+                end)
+                if not ok then
+                    MobileUI_Debug("Flip: ActionButton" .. i .. " attr failed: " .. tostring(err))
+                end
+            end
+        end
+    end
+    RefreshScatterButtons()
+end
+
+function MobileUILayout.EnsureFlipWatcher()
+    if flipFrame then return end
+    flipFrame = CreateFrame("Frame")
+    flipFrame:RegisterEvent("ACTIONBAR_PAGE_CHANGED")
+    flipFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
+    flipFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    flipFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    flipFrame:SetScript("OnEvent", function(_, event)
+        if event == "PLAYER_REGEN_ENABLED" then
+            if flipPending then MobileUILayout.ApplyFlip() end
+        else
+            MobileUILayout.ApplyFlip()
+        end
+    end)
 end
 
 -- 5. Player HP / Mana
@@ -644,15 +781,28 @@ local function RevertChatFrame()
 end
 
 -- Hide Bottom Bar Art + OnUpdate Guard
--- MultiBarBottomLeft is NOT hidden: the scatter buttons must stay attached to it
--- for correct slot resolution. Instead it is parked off-screen (shown, but at
--- (-1000,-1000)) so its remaining buttons are out of view.
-local function ParkBottomLeftBar()
+-- MultiBarBottomLeft must NOT be hidden or moved: the scatter buttons stay
+-- attached to it (slot resolution comes from the attached bar), and a hidden
+-- parent means children don't render. The client marks the bar container as a
+-- protected frame, so ClearAllPoints()/SetPoint() on it raise a secure-call
+-- error ("prevented the call of the secure function"). We leave it at its
+-- stock anchor — the container has no art, so it is invisible — and only
+-- ensure it stays SHOWN. Its non-scatter buttons (6-12) are hidden
+-- individually instead.
+local function EnsureBarShown()
     local mbl = _G["MultiBarBottomLeft"]
-    if mbl then
-        mbl:ClearAllPoints()
-        mbl:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", -1000, -1000)
-        mbl:Show()
+    if mbl and not mbl:IsShown() then mbl:Show() end
+end
+-- Hide the bottom-left bar's non-scatter buttons (6-12). The bar is horizontal
+-- and its buttons are anchor-chained (each LEFT of the previous button's
+-- RIGHT), so buttons 6-12 chain off the last scatter button
+-- (MultiBarBottomLeftButton5 at scatter spot 12) and would render on screen
+-- next to the arc. Hiding them individually is safe: they stay attached to the
+-- bar, so slot resolution for the scatter buttons is unaffected.
+local function HideBar2Tail()
+    for i = 6, 12 do
+        local b = _G["MultiBarBottomLeftButton" .. i]
+        if b and b:IsShown() then b:Hide() end
     end
 end
 local function ApplyHideFrames()
@@ -660,26 +810,37 @@ local function ApplyHideFrames()
         local f = _G[name]
         if f then f:Hide() end
     end
-    ParkBottomLeftBar()
+    EnsureBarShown()
+    HideBar2Tail()
     if not guardFrame then
         guardFrame = CreateFrame("Frame")
-        guardFrame:SetScript("OnUpdate", function()
+        guardFrame:SetScript("OnUpdate", function(self, elapsed)
             if not MobileDB or not MobileDB.layoutEnabled then return end
+            -- Flip follower state check (0.25s throttle). The client may not
+            -- fire ACTIONBAR_PAGE_CHANGED/UPDATE_SHAPESHIFT_FORM, so poll
+            -- here — this OnUpdate is guaranteed to run every frame.
+            self._t = (self._t or 0) + elapsed
+            if self._t >= 0.25 then
+                self._t = 0
+                local state = string.format("%d|%d|%d|%d",
+                    GetActionBarPage(), GetShapeshiftForm() or 0,
+                    IsStealthed() and 1 or 0, GetBonusBarOffset() or 0)
+                if state ~= self._flipState then
+                    self._flipState = state
+                    MobileUILayout.ApplyFlip()
+                end
+            end
             for _, name in ipairs(HIDE_FRAMES) do
                 local f = _G[name]
                 if f and f:IsShown() then f:Hide() end
             end
-            -- MultiBarBottomLeft: keep parked off-screen but SHOWN (slot
-            -- resolution depends on the buttons staying attached to it)
-            local mbl = _G["MultiBarBottomLeft"]
-            if mbl then
-                if not mbl:IsShown() then mbl:Show() end
-                local pt, rel, relPt, x, y = mbl:GetPoint(1)
-                if not rel or rel ~= UIParent or x ~= -1000 then
-                    mbl:ClearAllPoints()
-                    mbl:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", -1000, -1000)
-                end
-            end
+            -- MultiBarBottomLeft: keep SHOWN (a hidden parent hides the
+            -- scatter buttons). Never touch its points — the client marks the
+            -- bar container as a protected frame.
+            EnsureBarShown()
+            -- Tail buttons (6-12) chain off the last scatter button's RIGHT
+            -- edge; re-hide them in case the client re-shows them
+            HideBar2Tail()
             -- Keep action button hotkeys/names hidden
             for _, f in ipairs(HOTKEY_FRAMES) do
                 if f and f:IsShown() then f:Hide() end
@@ -691,8 +852,11 @@ local function ApplyHideFrames()
 end
 local function RevertHideFrames()
     if guardFrame then guardFrame:Hide() end
-    local mbl, sv = _G["MultiBarBottomLeft"], saved.multibarBottomLeft
-    if mbl and sv then RestorePoints(mbl, sv.points) end
+    -- Restore bottom-left bar tail buttons that were visible before the layout
+    for i = 6, 12 do
+        local b, shown = _G["MultiBarBottomLeftButton" .. i], saved.bar2tail and saved.bar2tail[i]
+        if b and shown then b:Show() end
+    end
     for _, name in ipairs(HIDE_FRAMES) do
         local f, sv = _G[name], saved.hides and saved.hides[name]
         if f and sv then f:Show() end
