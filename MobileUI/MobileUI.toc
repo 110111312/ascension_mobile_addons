@@ -1,9 +1,12 @@
 ## Interface: 30300
 ## Title: MobileUI
-## Notes: Mobile-optimized UI scaling for Ascension WoW
+## Notes: Mobile-optimized UI scaling + layout revamp for Ascension WoW
 ## Author: encap
-## Version: 1.0.0
-## SavedVariables: MobileDB
+## Version: 2.1.0
+## SavedVariables: MobileDB, MobileUIDebugLog
 
+MobileUILib.lua
 MobileUI.lua
+MobileUIChat.lua
+MobileUILayout.lua
 MobileUIOptions.xml

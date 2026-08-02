@@ -22,7 +22,7 @@
                     </Anchors>
                 </FontString>
                 <FontString name="$parentSubTitle" inherits="GameFontHighlightSmall"
-                            text="Scale the entire UI for mobile screens.">
+                            text="Fixed 1.2x UI scale, minimap 1.25x. Mobile-tuned for Ascension WoW.">
                     <Anchors>
                         <Anchor point="TOPLEFT" relativeTo="$parentTitle" relativePoint="BOTTOMLEFT">
                             <Offset><AbsDimension x="0" y="-8"/></Offset>
@@ -34,32 +34,11 @@
         </Layers>
 
         <Frames>
-            <Slider name="$parentScaleSlider" inherits="OptionsSliderTemplate">
+            <Slider name="$parentLookSpeedSlider" inherits="OptionsSliderTemplate">
                 <Size><AbsDimension x="240" y="16"/></Size>
                 <Anchors>
                     <Anchor point="TOPLEFT" relativeTo="$parentSubTitle" relativePoint="BOTTOMLEFT">
                         <Offset><AbsDimension x="0" y="-20"/></Offset>
-                    </Anchor>
-                </Anchors>
-                <Scripts>
-                    <OnLoad>
-                        _G[self:GetName().."Text"]:SetText("UI Scale")
-                        _G[self:GetName().."High"]:SetText("3.0")
-                        _G[self:GetName().."Low"]:SetText("1.0")
-                        self:SetMinMaxValues(1.0, 3.0)
-                        self:SetValueStep(0.05)
-                    </OnLoad>
-                    <OnValueChanged>
-                        MobileUI_OptionsOnScaleChanged(self:GetValue())
-                    </OnValueChanged>
-                </Scripts>
-            </Slider>
-
-            <Slider name="$parentLookSpeedSlider" inherits="OptionsSliderTemplate">
-                <Size><AbsDimension x="240" y="16"/></Size>
-                <Anchors>
-                    <Anchor point="TOPLEFT" relativeTo="$parentScaleSlider" relativePoint="BOTTOMLEFT">
-                        <Offset><AbsDimension x="0" y="-32"/></Offset>
                     </Anchor>
                 </Anchors>
                 <Scripts>
@@ -75,6 +54,22 @@
                     </OnValueChanged>
                 </Scripts>
             </Slider>
+
+            <CheckButton name="$parentLayoutCheck" inherits="OptionsCheckButtonTemplate">
+                <Anchors>
+                    <Anchor point="TOPLEFT" relativeTo="$parentLookSpeedSlider" relativePoint="BOTTOMLEFT">
+                        <Offset><AbsDimension x="0" y="-24"/></Offset>
+                    </Anchor>
+                </Anchors>
+                <Scripts>
+                    <OnLoad>
+                        _G[self:GetName().."Text"]:SetText("Mobile Layout Revamp")
+                    </OnLoad>
+                    <OnClick>
+                        MobileUI_OptionsOnLayoutChanged(self:GetChecked())
+                    </OnClick>
+                </Scripts>
+            </CheckButton>
         </Frames>
     </Frame>
 

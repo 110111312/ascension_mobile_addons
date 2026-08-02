@@ -11,7 +11,7 @@ The player streams WoW from a Windows PC to a mobile phone via **Apollo/Artemis*
 ### Relationship to MoveAnything
 
 - `MoveAnything/` — Original addon by Wagthaa, kept as **reference only**. Do not modify.
-- `MobileUI/` — New minimal addon built from scratch (3 files, ~290 lines).
+- `MobileUI/` — New minimal addon built from scratch (5 files, ~1000 lines).
 - MobileUI does NOT use MoveAnything's code. MoveAnything is only a reference for how WoW 3.3.5a addons are structured (toc, saved variables, options panels, event handling).
 
 ## Architecture
@@ -20,23 +20,25 @@ The player streams WoW from a Windows PC to a mobile phone via **Apollo/Artemis*
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `MobileUI.toc` | 8 | Addon manifest, saved variables declaration |
-| `MobileUI.lua` | ~280 | Core logic: events, scale, mouse-look speed, chat-toggle bubble button (reparent-hide), slash commands, options handlers |
-| `MobileUIOptions.xml` | ~75 | Interface options panel with scale slider + mouse-look-speed slider |
+| `MobileUI.toc` | 10 | Addon manifest, saved variables declaration |
+| `MobileUI.lua` | ~178 | Core: saved vars, fixed UI scale (1.2x, minimap 1.25x), mouse-look speed, slash commands, options handlers, init dispatch |
+| `MobileUIChat.lua` | ~144 | Chat toggle: chat-bubble button, reparent-hide technique |
+| `MobileUILayout.lua` | ~582 | 5-point mobile layout revamp: map, menu bar, bags, action bar, player HP/MP |
+| `MobileUIOptions.xml` | ~96 | Interface options panel: look-speed slider + layout checkbox (no scale slider — scale is fixed) |
 
 ### Saved Variable
 
 | Variable | Scope | Purpose |
 |----------|-------|---------|
-| `MobileDB` | Account-wide | `{ scale = 1.2, chatHidden = false, lookSpeed = 90, bubbleX/Y/Point/RelPoint }` — UI scale, chat-hidden flag, mouse-look speed, saved chat-bubble button position |
+| `MobileDB` | Account-wide | `{ chatHidden, lookSpeed, layoutEnabled, bubbleX/Y/Point/RelPoint }` — chat-hidden flag, mouse-look speed, layout toggle, saved chat-bubble position |
 
 ### How It Works
 
-The addon scales the entire UI by calling `UIParent:SetScale(scale)`. All UI frames (action bars, unit frames, minimap, chat, bags, tooltips, etc.) are children of `UIParent` and inherit the scale. The 3D world view (`WorldFrame`) is not affected.
+The addon scales the entire UI by calling `UIParent:SetScale(1.2)`. All UI frames (action bars, unit frames, minimap, chat, bags, tooltips, etc.) are children of `UIParent` and inherit the scale. The 3D world view (`WorldFrame`) is not affected.
 
-- **Scale range:** 1.0 to 3.0 (step 0.05)
-- **Default:** 1.2 (tested good on phone)
-- **Applied on:** `PLAYER_ENTERING_WORLD` (initial) and on user change
+- **Scale is fixed at 1.2** — no slider, no slash option (removed; was 1.0–3.0).
+- **Minimap exception:** `MinimapCluster` gets `SetScale(1.25/1.2)` so its *effective* scale is 1.25 — slightly bigger than the rest for readability on a phone.
+- **Applied on:** `PLAYER_ENTERING_WORLD` (idempotent)
 
 ### Mouse Look Speed
 
@@ -50,22 +52,29 @@ MobileUI exposes a slider going **below** 90 (range 10–90, step 5), using `Set
 
 ### Controls
 
-- **Slash command:** `/mui <scale>` (e.g., `/mui 1.2`), `/mui look <10-90>` (e.g., `/mui look 30`), `/mui chat` to toggle the chat, or `/mui` to show current state
-- **Options panel:** Interface → MobileUI → UI Scale slider + Mouse Look Speed slider
+- **Slash command:** `/mui look <10-90>`, `/mui chat`, `/mui layout`, or `/mui` to show current state
+- **Options panel:** Interface → MobileUI → Look Speed slider + Mobile Layout checkbox
 - **Chat toggle:** a dedicated chat-bubble button (`MobileUIChatBubble`) in the bottom-left corner, above the action bar. Click it to completely hide the whole chat UI (chat frame, tabs, dock, chat-menu & social buttons); click again to restore. Also `/mui chat`. **Drag** the button to reposition it (saved per-account) — useful to clear taller action bars like DragonUI's.
 
 ## Progress Log
 
-### ✅ Phase 1: Global UI Scale
+### ✅ Phase 1: Global UI Scale (now fixed)
 - [x] Minimal addon structure (toc + lua + xml)
 - [x] `UIParent:SetScale()` based global scaling
 - [x] Slash command `/mui`
-- [x] Options panel with slider
+- [x] Options panel with slider (later removed)
 - [x] Default 1.2x, range 1.0-3.0
+- [x] Scale now **fixed at 1.2x** (slider + `/mui <scale>` removed); minimap exception at effective 1.25x
 
-### 🔲 Phase 2: Layout Presets
-- Mobile-friendly layout (action bars at bottom, minimap repositioned)
-- One-tap preset switching
+### ✅ Phase 2: Mobile Layout Revamp
+- [x] Map: MinimapCluster moved from top-right to top-left
+- [x] Menu bar: 10 micro buttons → top-right horizontal circle row (26px)
+- [x] Bags: single backpack icon at bottom-left; click opens all bag windows repositioned to the left side
+- [x] Action bar: ActionButton1-12 → 4-layer concentric scatter in bottom-right quarter-circle (60/48/40/32px)
+- [x] Player HP/MP: PlayerFrame → bottom-center long bars (280px), no portrait
+- [x] Bottom-bar art, extra action bars, exp bar hidden
+- [x] Reversible via `/mui layout` or options checkbox — original frame state saved & restored
+- [x] Combat-safe: defers apply/revert when in combat (SecureActionButton lockdown)
 
 ### ✅ Phase 3: Chat Toggle
 - [x] Dedicated chat-bubble button (`MobileUIChatBubble`) at bottom-left, above the action bar

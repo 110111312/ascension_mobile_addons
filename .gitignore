@@ -5,3 +5,5 @@
 .lua/*
 .vscode
 .idea
+# pi agent session artifacts
+.pi-subagents/

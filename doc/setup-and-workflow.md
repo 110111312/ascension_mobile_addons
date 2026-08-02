@@ -44,7 +44,7 @@
 4. **Saved-variables gotcha:** `MobileDB` is account-wide and persists across
    sessions. The `DEFAULTS` table only fills keys that are `nil`, so existing
    accounts keep their old values. To force a fresh default (e.g. after
-   changing `DEFAULTS.scale`), either set it in-game (`/mui 1.2`) once, or delete
+   changing a `DEFAULTS` value), either set it in-game once (e.g. `/mui look 90`), or delete
    the saved var file:
    `C:\Ascension\Launcher\resources\ascension-live\WTF\Account\<account>\SavedVariables\MobileUI.lua`
    then `/reload`.

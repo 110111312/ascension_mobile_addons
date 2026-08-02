@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MobileUI Layout Draft v4 — Ascension WoW 3.3.5a</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0d0d1a;
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px 20px 40px 20px;
+  }
+
+  /* ── Controls ── */
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .controls h1 { font-size: 16px; color: #0cf; white-space: nowrap; }
+  .controls button {
+    padding: 6px 16px; border: 2px solid #444; border-radius: 6px;
+    background: #1a1a2e; color: #888; cursor: pointer; font-size: 12px;
+  }
+  .controls button.active { border-color: #0cf; color: #0cf; }
+
+  /* ── Legend ── */
+  .legend {
+    margin-top: 16px; display: flex; flex-wrap: wrap; gap: 12px 24px;
+    max-width: 960px; font-size: 11px; color: #888;
+  }
+  .legend .item { display: flex; align-items: center; gap: 6px; }
+  .legend .num {
+    width: 18px; height: 18px; border-radius: 50%; background: #0cf; color: #111;
+    text-align: center; line-height: 18px; font-size: 10px; font-weight: bold;
+  }
+  .legend b { color: #ccc; }
+
+  /* ── Phone screen ── */
+  .phone {
+    position: relative; width: 960px; height: 540px;
+    background: #1a3a1a; border: 4px solid #333; border-radius: 16px;
+    overflow: hidden; box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+  }
+  .world {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse at 40% 55%, rgba(90,130,70,0.35), transparent 65%),
+      radial-gradient(ellipse at 65% 30%, rgba(120,90,50,0.2), transparent 55%),
+      linear-gradient(180deg, #2a3a5a 0%, #3a5a3a 35%, #2a4a2a 70%, #1a3a1a 100%);
+  }
+  .world::before {
+    content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 40%;
+    background: linear-gradient(180deg, transparent, rgba(20,40,20,0.3));
+  }
+
+  /* ════════════════════════════════════════════════════════════ */
+  /*  1. MAP — Top Left                                           */
+  /* ════════════════════════════════════════════════════════════ */
+  .minimap {
+    position: absolute; top: 10px; left: 10px;
+    width: 130px; height: 130px; border-radius: 50%;
+    border: 3px solid #8a7a5a;
+    background: radial-gradient(circle, #4a6a8a, #2a4a6a);
+    box-shadow: 0 0 8px rgba(0,0,0,0.5), inset 0 0 20px rgba(0,0,0,0.3);
+    z-index: 10;
+  }
+  .minimap-label {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    font-size: 11px; color: #ccc; text-align: center; z-index: 11;
+  }
+  .minimap-zone {
+    position: absolute; top: 14px; left: 150px; font-size: 12px;
+    color: #ffe; text-shadow: 1px 1px 2px #000; z-index: 10;
+  }
+  .mm-zoom-in, .mm-zoom-out {
+    position: absolute; width: 24px; height: 24px; border-radius: 50%;
+    background: rgba(40,40,40,0.8); border: 2px solid #6a6a6a;
+    color: #ccc; font-size: 12px;
+    display: flex; align-items: center; justify-content: center; z-index: 11;
+  }
+  .mm-zoom-in  { top: 92px; left: 100px; }
+  .mm-zoom-out { top: 92px; left: 6px; }
+
+  /* ════════════════════════════════════════════════════════════ */
+  /*  2. MENU BAR — Top Right, HORIZONTAL                         */
+  /*  FIX: display:flex !important to win specificity over        */
+  /*  body.show-mobile .mobile-only { display:block }             */
+  /* ════════════════════════════════════════════════════════════ */
+  .menu-bar {
+    position: absolute; top: 10px; right: 10px;
+    display: flex !important;        /* wins over body.show-mobile .mobile-only { display:block } */
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    gap: 4px;
+    z-index: 10;
+    width: max-content;
+  }
+  .menu-btn {
+    flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%;
+    border: 2px solid #4a4a5a; background: rgba(30,30,40,0.85);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: all 0.12s;
+  }
+  .menu-btn:hover {
+    border-color: #ffd700; background: rgba(50,50,70,0.9); transform: scale(1.12);
+  }
+  .menu-btn .ic { font-size: 13px; filter: grayscale(0.3); }
+
+  /* ════════════════════════════════════════════════════════════ */
+  /*  3. BAG — Single icon, BOTTOM LEFT. Click opens ALL bags.     */
+  /* ════════════════════════════════════════════════════════════ */
+  .bag-main {
+    position: absolute; bottom: 10px; left: 10px;
+    width: 52px; height: 52px; border-radius: 50%;
+    border: 3px solid #8a7a5a;
+    background: radial-gradient(circle, #5a4a3a, #3a2a1a);
+    color: #ffd700; font-size: 24px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; z-index: 12;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5); transition: all 0.15s;
+  }
+  .bag-main:hover { border-color: #ffd700; transform: scale(1.05); }
+  .bag-main:active { transform: scale(0.95); }
+  .bag-badge {
+    position: absolute; top: -2px; right: -2px; background: #c22;
+    color: #fff; font-size: 10px; border-radius: 50%;
+    width: 20px; height: 20px; border: 1.5px solid #fff;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .bag-notify {
+    position: absolute; bottom: 68px; left: 10px; font-size: 10px;
+    color: #ffd700; background: rgba(0,0,0,0.7); padding: 4px 10px;
+    border-radius: 4px; border: 1px solid #8a7a5a;
+    opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 12;
+    white-space: nowrap;
+  }
+  .bag-notify.show { opacity: 1; }
+
+  /* Bag windows — opened on the LEFT side when bag icon is clicked */
+  .bag-windows {
+    position: absolute;
+    bottom: 70px;
+    left: 8px;
+    display: none;
+    flex-direction: column-reverse;  /* backpack at bottom, bag4 at top */
+    gap: 4px;
+    z-index: 11;
+  }
+  .bag-windows.show { display: flex; }
+  .bag-win {
+    width: 124px;            /* 4 cols × ~30px */
+    background: rgba(35,30,20,0.92);
+    border: 2px solid #6a5a3a;
+    border-radius: 4px;
+    padding: 4px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 2px;
+  }
+  .bag-win .slot {
+    width: 26px; height: 26px;
+    background: rgba(50,45,35,0.9);
+    border: 1px solid #4a4030;
+    border-radius: 2px;
+  }
+  .bag-win .slot.empty { opacity: 0.4; }
+
+  /* ════════════════════════════════════════════════════════════ */
+  /*  4. ACTION BAR — SCATTERED in a QUARTER CIRCLE                */
+  /*                                                               */
+  /*  Geometry:                                                    */
+  /*    Center of arc = bottom-right CORNER of phone (960, 540)    */
+  /*    R = 340px (from HP-bar right end at x=620 to right edge)   */
+  /*    Arc sweeps from bottom edge (620,540) to right edge        */
+  /*    (960,200), forming a quarter circle in the bottom-right.   */
+  /*                                                               */
+  /*    Buttons scattered WITHIN this quarter circle:              */
+  /*    Tier 1 (52px): near the corner (thumb rest)               */
+  /*    Tier 2 (42px): mid-distance along the arc                  */
+  /*    Tier 3 (34px): outer edge of the arc                        */
+  /*    All positioned with CSS right/bottom from the corner.      */
+  /* ════════════════════════════════════════════════════════════ */
+  .ab {
+    position: absolute; border-radius: 50%;
+    display: flex !important;         /* wins over body.show-mobile .mobile-only { display:block } */
+    align-items: center; justify-content: center;
+    cursor: pointer; transition: all 0.1s; font-weight: bold;
+    color: #ddd; box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    border-style: solid; border-width: 2px; z-index: 10;
+  }
+  .ab:hover { transform: scale(1.08); z-index: 15; }
+  .ab .keynum {
+    position: absolute; bottom: 2px; right: 4px;
+    font-size: 7px; color: rgba(180,180,180,0.7);
+  }
+  /* Layer 1: biggest (button 1, center of cluster) */
+  .ab.t1 {
+    width: 60px; height: 60px; font-size: 18px;
+    border-color: #7a7aaa; background: radial-gradient(circle, #2a2a4a, #1a1a3a);
+  }
+  .ab.t1:hover { border-color: #ffd700; background: radial-gradient(circle, #3a3a5a, #2a2a4a); }
+  /* Layer 2: large (buttons 2,3,4 around button 1) */
+  .ab.t2 {
+    width: 48px; height: 48px; font-size: 15px;
+    border-color: #6a6a8a; background: radial-gradient(circle, #252540, #15152a);
+  }
+  .ab.t2:hover { border-color: #ffd700; background: radial-gradient(circle, #353550, #252540); }
+  /* Layer 3: medium (buttons 5-9, ring around layer 2) */
+  .ab.t3 {
+    width: 40px; height: 40px; font-size: 12px;
+    border-color: #5a5a6a; background: radial-gradient(circle, #202030, #101020);
+  }
+  .ab.t3:hover { border-color: #ffd700; background: radial-gradient(circle, #303040, #202030); }
+  /* Layer 4: smallest (buttons 10-12, outer scatter) */
+  .ab.t4 {
+    width: 32px; height: 32px; font-size: 10px;
+    border-color: #4a4a5a; background: radial-gradient(circle, #181828, #080818);
+  }
+  .ab.t4:hover { border-color: #ffd700; background: radial-gradient(circle, #282838, #181828); }
+
+  /* Arc guide overlay */
+  .arc-guide {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 4; opacity: 0; transition: opacity 0.3s;
+  }
+  .arc-guide.show { opacity: 1; }
+  .arc-guide svg { width: 100%; height: 100%; }
+
+  /* ════════════════════════════════════════════════════════════ */
+  /*  5. PLAYER HP / MANA — Bottom Center, no portrait            */
+  /* ════════════════════════════════════════════════════════════ */
+  .player-bars {
+    position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+    z-index: 10; width: 280px;
+  }
+  .hp-bar {
+    height: 20px; background: #3a0808; border: 2px solid #2a0505;
+    border-radius: 5px; position: relative; margin-bottom: 3px; overflow: hidden;
+  }
+  .hp-fill {
+    height: 100%; width: 72%;
+    background: linear-gradient(90deg, #1a6a1a, #3aaa3a);
+    border-radius: 3px 0 0 3px; transition: width 0.3s;
+  }
+  .hp-text {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    font-size: 10px; color: #fff; text-shadow: 1px 1px 2px #000; white-space: nowrap;
+  }
+  .mana-bar {
+    height: 16px; background: #08083a; border: 2px solid #05052a;
+    border-radius: 5px; position: relative; overflow: hidden;
+  }
+  .mana-fill {
+    height: 100%; width: 58%;
+    background: linear-gradient(90deg, #0a1a6a, #2a4aaa);
+    border-radius: 3px 0 0 3px; transition: width 0.3s;
+  }
+  .mana-text {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    font-size: 9px; color: #fff; text-shadow: 1px 1px 2px #000; white-space: nowrap;
+  }
+
+  /* ════════════════════════════════════════════════════════════ */
+  /*  CHAT BUBBLE — bottom-left, clearly above bag                 */
+  /*  Bag icon tops out at 62px from bottom. Bubble at 90px.       */
+  /* ════════════════════════════════════════════════════════════ */
+  .chat-bubble {
+    position: absolute; bottom: 90px; left: 18px;
+    width: 36px; height: 36px; border-radius: 50%;
+    border: 2px solid #4a4a5a; background: rgba(30,30,40,0.85);
+    color: #0cf; font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; z-index: 11;
+  }
+
+  /* ── Annotations ── */
+  .annot {
+    position: absolute; font-size: 9px; color: #0cf;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    pointer-events: none; z-index: 5;
+    background: rgba(0,0,0,0.55); padding: 2px 6px; border-radius: 3px;
+    white-space: nowrap;
+  }
+  body.hide-annot .annot { display: none; }
+
+  /* ── Show / hide mobile vs default ──                           */
+  /* display:block on .mobile-only (specificity 0,2,1) would     */
+  /* override display:flex on .menu-bar (0,1,0) and .ab (0,1,0). */
+  /* Fix: use !important on flex containers so they always win.    */
+  .default-only { display: none; }
+  .mobile-only  { display: none; }
+  body.show-default .default-only { display: block; }
+  body.show-default .mobile-only  { display: none; }
+  body.show-mobile  .default-only { display: none; }
+  body.show-mobile  .mobile-only  { display: block; }
+
+  .d-minimap {
+    position: absolute; top: 10px; right: 10px;
+    width: 130px; height: 130px; border-radius: 50%;
+    border: 3px solid #8a7a5a;
+    background: radial-gradient(circle, #4a6a8a, #2a4a6a); z-index: 10;
+  }
+  .d-minimap span {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    font-size: 11px; color: #ccc;
+  }
+  .d-player {
+    position: absolute; top: 10px; left: 10px; width: 210px; height: 54px;
+    background: rgba(20,20,30,0.8); border: 1px solid #3a3a4a; border-radius: 4px;
+    display: flex; align-items: center; gap: 6px; padding: 4px; z-index: 10;
+  }
+  .d-player .dp {
+    width: 44px; height: 44px; border-radius: 4px;
+    background: radial-gradient(circle, #6a5a3a, #3a2a1a);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; color: #aaa;
+  }
+  .d-player .db { flex: 1; }
+  .d-player .db .hb {
+    height: 10px; background: #2a4a2a; border-radius: 2px; margin-bottom: 2px;
+    border: 1px solid #1a2a1a; position: relative;
+  }
+  .d-player .db .hb::after {
+    content: ''; position: absolute; left: 0; top: 0; height: 100%; width: 70%;
+    background: #3a8a3a; border-radius: 2px;
+  }
+  .d-player .db .mb {
+    height: 8px; background: #1a1a4a; border-radius: 2px;
+    border: 1px solid #0a0a3a; position: relative;
+  }
+  .d-player .db .mb::after {
+    content: ''; position: absolute; left: 0; top: 0; height: 100%; width: 55%;
+    background: #2a2a8a; border-radius: 2px;
+  }
+  .d-actionbar {
+    position: absolute; bottom: 44px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 2px; z-index: 10;
+  }
+  .d-actionbar .ab-d {
+    width: 34px; height: 34px; border: 2px solid #4a4a5a;
+    background: radial-gradient(circle, #2a2a3a, #1a1a2a);
+    border-radius: 4px; color: #888; font-size: 10px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .d-menubar {
+    position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 2px; z-index: 10;
+  }
+  .d-menubar .mb-d {
+    width: 26px; height: 32px; background: rgba(30,30,40,0.85);
+    border: 1px solid #4a4a5a;
+    display: flex; align-items: center; justify-content: center; font-size: 11px;
+  }
+  .d-bags {
+    position: absolute; bottom: 6px; right: 10px; display: flex; gap: 2px; z-index: 10;
+  }
+  .d-bags .bd {
+    width: 30px; height: 30px; border: 2px solid #6a5a3a;
+    background: rgba(40,35,25,0.9); border-radius: 4px;
+    color: #cc9; font-size: 8px;
+    display: flex; align-items: center; justify-content: center;
+  }
+</style>
+</head>
+<body class="show-mobile">
+
+<div class="controls">
+  <h1>MobileUI Layout Draft v4</h1>
+  <button class="active" id="btnMobile" onclick="showMobile()">📱 Mobile</button>
+  <button id="btnDefault" onclick="showDefault()">🖥️ Default</button>
+  <button id="btnAnnot" onclick="toggleAnnot()">🏷️ Labels</button>
+  <button id="btnArc" onclick="toggleArc()">📐 Arc</button>
+</div>
+
+<!-- ════════ PHONE ════════ -->
+<div class="phone">
+  <div class="world"></div>
+
+  <!-- ════ MOBILE LAYOUT ════ -->
+
+  <!-- 1. MAP — Top Left -->
+  <div class="minimap mobile-only">
+    <div class="minimap-label">🗺<br>MAP</div>
+    <div class="mm-zoom-in">+</div>
+    <div class="mm-zoom-out">−</div>
+  </div>
+  <div class="minimap-zone mobile-only">Elwynn Forest</div>
+  <div class="annot mobile-only" style="top:146px; left:14px;">1. Map → Top-Left</div>
+
+  <!-- 2. MENU BAR — Top Right, HORIZONTAL -->
+  <div class="menu-bar mobile-only">
+    <div class="menu-btn" title="Character"><span class="ic">🛡️</span></div>
+    <div class="menu-btn" title="Spellbook"><span class="ic">📖</span></div>
+    <div class="menu-btn" title="Talents"><span class="ic">⭐</span></div>
+    <div class="menu-btn" title="Achievements"><span class="ic">🏆</span></div>
+    <div class="menu-btn" title="Quests"><span class="ic">❓</span></div>
+    <div class="menu-btn" title="Social"><span class="ic">👥</span></div>
+    <div class="menu-btn" title="PVP"><span class="ic">⚔️</span></div>
+    <div class="menu-btn" title="Dungeon Finder"><span class="ic">🏰</span></div>
+    <div class="menu-btn" title="Game Menu (ESC)"><span class="ic">⚙️</span></div>
+    <div class="menu-btn" title="Help"><span class="ic">❔</span></div>
+  </div>
+  <div class="annot mobile-only" style="top:44px; right:14px;">2. Menu → Top-Right (horizontal)</div>
+
+  <!-- 3. BAG — Bottom Left, click opens all bags -->
+  <div class="bag-main mobile-only" onclick="openAllBags()" title="Open All Bags">
+    🎒
+    <div class="bag-badge">16</div>
+  </div>
+  <div class="bag-notify mobile-only" id="bagNotify">📦 All bags opened</div>
+
+  <!-- Bag windows — open on the LEFT side, stacked above bag icon -->
+  <div class="bag-windows mobile-only" id="bagWindows">
+    <!-- Bag 4 (top) -->
+    <div class="bag-win">
+      <div class="slot"></div><div class="slot"></div><div class="slot empty"></div><div class="slot empty"></div>
+      <div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot empty"></div>
+    </div>
+    <!-- Bag 3 -->
+    <div class="bag-win">
+      <div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div>
+      <div class="slot empty"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div>
+    </div>
+    <!-- Bag 2 -->
+    <div class="bag-win">
+      <div class="slot"></div><div class="slot empty"></div><div class="slot"></div><div class="slot"></div>
+      <div class="slot"></div><div class="slot"></div><div class="slot empty"></div><div class="slot"></div>
+    </div>
+    <!-- Bag 1 -->
+    <div class="bag-win">
+      <div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div>
+      <div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div>
+    </div>
+    <!-- Backpack (bottom, closest to bag icon) -->
+    <div class="bag-win">
+      <div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot empty"></div>
+      <div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div>
+      <div class="slot"></div><div class="slot empty"></div><div class="slot"></div><div class="slot"></div>
+    </div>
+  </div>
+  <div class="annot mobile-only" style="bottom:18px; left:70px;">3. Bag → Bottom-Left (opens all on left)</div>
+
+  <!-- 4. ACTION BAR — Concentric layered scatter in bottom-right
+       ═══════════════════════════════════════════════════════════
+       Arc center: bottom-right CORNER of phone (960, 540)
+       R = 340px: from HP bar right end (x≈620) to phone right edge (x=960)
+       Two straight edges of the arc = bottom edge + right edge of phone
+
+       4 concentric layers around button 1:
+       ─────────────────────────────────────────────────────
+       right edge ↑│              12
+                  │         11
+                  │  5    6
+                  │     7        10
+                  │  2     4
+                  │  1   3    8     9
+                  │──────────────────────────────  ← bottom edge
+                          corner (arc center)
+       ─────────────────────────────────────────────────────
+       Layer 1 (60px): btn 1      — center, biggest, thumb rest
+       Layer 2 (48px): btns 2-4   — 3 buttons around btn 1
+       Layer 3 (40px): btns 5-9   — 5 buttons in a wider ring
+       Layer 4 (32px): btns 10-12 — 3 buttons scattered equally (outer)
+  -->
+
+  <!-- Arc guide SVG -->
+  <div class="arc-guide mobile-only" id="arcGuide">
+    <svg viewBox="0 0 960 540" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="960" cy="540" r="5" fill="#0cf" opacity="0.8"/>
+      <text x="928" y="530" font-size="9" fill="#0cf" opacity="0.6">pivot</text>
+      <!-- bottom radius along phone bottom edge -->
+      <line x1="960" y1="540" x2="620" y2="540" stroke="#0cf" stroke-width="1.5" stroke-dasharray="6,4" opacity="0.5"/>
+      <text x="770" y="534" font-size="8" fill="#0cf" opacity="0.5">R=340 (to HP bar end)</text>
+      <!-- right radius along phone right edge -->
+      <line x1="960" y1="540" x2="960" y2="200" stroke="#0cf" stroke-width="1.5" stroke-dasharray="6,4" opacity="0.5"/>
+      <text x="940" y="375" font-size="8" fill="#0cf" opacity="0.5" transform="rotate(-90 940 375)">R=340</text>
+      <!-- outer arc R=340 -->
+      <path d="M 620,540 A 340,340 0 0 1 960,200" stroke="#0cf" stroke-width="1.5" stroke-dasharray="5,4" fill="none" opacity="0.35"/>
+      <!-- layer guide circles (concentric) -->
+      <path d="M 880,540 A 80,80 0 0 1 960,460" stroke="#7a7" stroke-width="1" stroke-dasharray="3,3" fill="none" opacity="0.25"/>
+      <text x="884" y="530" font-size="7" fill="#77a" opacity="0.4">L2</text>
+      <path d="M 820,540 A 140,140 0 0 1 960,400" stroke="#7a7" stroke-width="1" stroke-dasharray="3,3" fill="none" opacity="0.25"/>
+      <text x="824" y="530" font-size="7" fill="#77a" opacity="0.4">L3</text>
+      <path d="M 740,540 A 220,220 0 0 1 960,320" stroke="#7a7" stroke-width="1" stroke-dasharray="3,3" fill="none" opacity="0.25"/>
+      <path d="M 660,540 A 300,300 0 0 1 960,240" stroke="#7a7" stroke-width="1" stroke-dasharray="3,3" fill="none" opacity="0.25"/>
+      <text x="664" y="530" font-size="7" fill="#77a" opacity="0.4">L4</text>
+    </svg>
+  </div>
+
+  <!-- Layer 1 (60px) — center of cluster, thumb rest -->
+  <div class="ab t1 mobile-only" style="right:18px; bottom:18px;" title="Action 1 (main)">1<span class="keynum">1</span></div>
+
+  <!-- Layer 2 (48px) — 3 buttons around button 1 -->
+  <div class="ab t2 mobile-only" style="right:22px; bottom:90px;"  title="Action 2">2<span class="keynum">2</span></div>
+  <div class="ab t2 mobile-only" style="right:90px; bottom:22px;"  title="Action 3">3<span class="keynum">3</span></div>
+  <div class="ab t2 mobile-only" style="right:86px; bottom:86px;"  title="Action 4">4<span class="keynum">4</span></div>
+
+  <!-- Layer 3 (40px) — 5 buttons in a ring around layer 2 -->
+  <div class="ab t3 mobile-only" style="right:20px;  bottom:150px;" title="Action 5">5<span class="keynum">5</span></div>
+  <div class="ab t3 mobile-only" style="right:75px;  bottom:148px;" title="Action 6">6<span class="keynum">6</span></div>
+  <div class="ab t3 mobile-only" style="right:145px; bottom:140px;" title="Action 7">7<span class="keynum">7</span></div>
+  <div class="ab t3 mobile-only" style="right:175px; bottom:72px;"  title="Action 8">8<span class="keynum">8</span></div>
+  <div class="ab t3 mobile-only" style="right:155px; bottom:18px;"  title="Action 9">9<span class="keynum">9</span></div>
+
+  <!-- Layer 4 (32px) — 3 buttons just outside layer 3, near their neighbours -->
+  <div class="ab t4 mobile-only" style="right:210px; bottom:35px;"  title="Action 10 (CD)">10<span class="keynum">0</span></div>
+  <div class="ab t4 mobile-only" style="right:190px; bottom:185px;" title="Action 11 (CD)">11<span class="keynum">-</span></div>
+  <div class="ab t4 mobile-only" style="right:45px;  bottom:198px;" title="Action 12 (CD)">12<span class="keynum">=</span></div>
+
+  <div class="annot mobile-only" style="bottom:280px; right:14px;">4. Actions → layered quarter-circle</div>
+
+  <!-- 5. HP / MANA — Bottom Center -->
+  <div class="player-bars mobile-only">
+    <div class="hp-bar">
+      <div class="hp-fill"></div>
+      <div class="hp-text">7,420 / 9,800</div>
+    </div>
+    <div class="mana-bar">
+      <div class="mana-fill"></div>
+      <div class="mana-text">3,200 / 5,400</div>
+    </div>
+  </div>
+  <div class="annot mobile-only" style="bottom:40px; left:50%; transform:translateX(-50%);">5. HP/Mana → Bottom-Center</div>
+
+  <!-- CHAT BUBBLE — above bag -->
+  <div class="chat-bubble mobile-only" title="Toggle Chat">💬</div>
+  <div class="annot mobile-only" style="bottom:92px; left:58px; font-size:8px;">chat</div>
+
+  <!-- ════ DEFAULT LAYOUT ════ -->
+  <div class="d-minimap default-only"><span>🗺 MAP</span></div>
+  <div class="annot default-only" style="top:146px; right:14px;">Map: Top-Right</div>
+  <div class="d-player default-only">
+    <div class="dp">🧙</div>
+    <div class="db"><div class="hb"></div><div class="mb"></div></div>
+  </div>
+  <div class="annot default-only" style="top:70px; left:14px;">Player: Top-Left (w/ portrait)</div>
+  <div class="d-actionbar default-only">
+    <div class="ab-d">1</div><div class="ab-d">2</div><div class="ab-d">3</div><div class="ab-d">4</div>
+    <div class="ab-d">5</div><div class="ab-d">6</div><div class="ab-d">7</div><div class="ab-d">8</div>
+    <div class="ab-d">9</div><div class="ab-d">0</div><div class="ab-d">-</div><div class="ab-d">=</div>
+  </div>
+  <div class="annot default-only" style="bottom:84px; left:50%; transform:translateX(-50%);">Action Bar: Bottom-Center</div>
+  <div class="d-menubar default-only">
+    <div class="mb-d">🛡️</div><div class="mb-d">📖</div><div class="mb-d">⭐</div><div class="mb-d">🏆</div>
+    <div class="mb-d">❓</div><div class="mb-d">👥</div><div class="mb-d">⚔️</div><div class="mb-d">🏰</div>
+    <div class="mb-d">⚙️</div><div class="mb-d">❔</div>
+  </div>
+  <div class="annot default-only" style="bottom:42px; left:50%; transform:translateX(-50%);">Menu: Bottom-Center</div>
+  <div class="d-bags default-only">
+    <div class="bd">K</div><div class="bd">B3</div><div class="bd">B2</div><div class="bd">B1</div><div class="bd">🎒</div>
+  </div>
+  <div class="annot default-only" style="bottom:42px; right:130px;">Bags: row of 5</div>
+
+</div>
+
+<!-- Legend -->
+<div class="legend">
+  <div class="item"><span class="num">1</span><b>Map</b> — Top-Right → Top-Left</div>
+  <div class="item"><span class="num">2</span><b>Menu</b> — Bottom bar → Top-Right horizontal circles</div>
+  <div class="item"><span class="num">3</span><b>Bag</b> — Row of 5 → Single icon Bottom-Left (opens all)</div>
+  <div class="item"><span class="num">4</span><b>Actions</b> — Bottom bar → 4 concentric layers (60/48/40/32px)</div>
+  <div class="item"><span class="num">5</span><b>HP/Mana</b> — Top-Left w/ portrait → Bottom-Center, no portrait</div>
+</div>
+
+<script>
+function showMobile() {
+  document.body.className = document.body.className.includes('hide-annot') ? 'show-mobile hide-annot' : 'show-mobile';
+  document.getElementById('btnMobile').classList.add('active');
+  document.getElementById('btnDefault').classList.remove('active');
+}
+function showDefault() {
+  document.body.className = document.body.className.includes('hide-annot') ? 'show-default hide-annot' : 'show-default';
+  document.getElementById('btnDefault').classList.add('active');
+  document.getElementById('btnMobile').classList.remove('active');
+}
+function toggleAnnot() {
+  document.body.classList.toggle('hide-annot');
+  document.getElementById('btnAnnot').classList.toggle('active');
+}
+function toggleArc() {
+  document.getElementById('arcGuide').classList.toggle('show');
+  document.getElementById('btnArc').classList.toggle('active');
+}
+function openAllBags() {
+  var w = document.getElementById('bagWindows');
+  var n = document.getElementById('bagNotify');
+  if (w.classList.contains('show')) {
+    w.classList.remove('show');
+  } else {
+    w.classList.add('show');
+    n.classList.add('show');
+    setTimeout(function() { n.classList.remove('show'); }, 1200);
+  }
+}
+</script>
+
+</body>
+</html>
