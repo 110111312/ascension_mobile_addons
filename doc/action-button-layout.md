@@ -78,6 +78,51 @@ T/F/Q/E/R bindings are unchanged: `T/F → MULTIACTIONBAR1BUTTON4-5` and
 `Q/E/R → MULTIACTIONBAR1BUTTON1-3` → those buttons → slots 61-65. Assign skills
 to the scatter buttons and the keys work.
 
+## Stance / Stealth Flip Follower (ActionButton1–12)
+
+**Problem:** on this Ascension client the Lua-visible action-bar page
+(`GetActionBarPage()`) stays **pinned at 1** in stealth — the client resolves
+keypresses internally (C-side). The reparented scatter buttons therefore never
+recomputed on their own: display and click stayed on page-1 actions while a
+keypress (e.g. `-` bound to `ACTIONBUTTON11`) targeted the stealth bar. The
+addon itself never pinned the page (verified: zero references to page/action
+APIs before the fix).
+
+**What the stealth bar actually is (empirically verified):** the client does
+**not** flip to action-bar page 2 — pages 2–5 are completely empty in stealth.
+The stealth bar is the **bonus bar** (`BonusActionBarFrame`): in stealth
+`GetBonusBarOffset() = 1` → page 7, slots **73–84**. That's why the default UI
+shows the 2 auto-assigned stealth skills there, why `-` routes to the bonus
+buttons in stealth (stock `ActionButtonUp` checks `BonusActionBarFrame:IsShown()`
+first), and why `GetActionBarPage()` never moves (the bonus bar is an overlay,
+not a page flip).
+
+Also: this client fires **no** `ACTIONBAR_PAGE_CHANGED` /
+`UPDATE_SHAPESHIFT_FORM` events for stealth, and `GetShapeshiftForm()` is
+unreliable (reports 2, sometimes 0, while stealthed) — so `IsStealthed()` is
+the primary detector.
+
+**Implementation (`MobileUILayout.ApplyFlip`, polled every 0.25s in the
+guardFrame `OnUpdate`):**
+
+- The client owns the stance→bar mapping; the addon only mirrors it. The target
+  page is derived generically (`GetFlipPage`), in priority order:
+  1. `GetActionBarPage() > 1` → follow it (stock 3.3.5a behavior: the page
+     flips for every class/form).
+  2. `GetBonusBarOffset() > 0` → bonus page `NUM_ACTIONBAR_PAGES + offset`
+     (this client's stealth/stance mechanism — the same condition stock
+     `BonusActionBarFrame` uses to show itself).
+  3. Fallbacks only when neither moves: `IsStealthed()` → page 2, then a small
+     form table (`ROGUE` stealth → 2, `WARRIOR` stances → 3/4/5).
+- Because `GetActionBarPage()` stays 1 here, the follower sets the `actionpage`
+  **attribute** on each `ActionButton1–12` (a self attribute overrides the
+  parent chain in `ActionButton_CalculateAction`), then calls
+  `ActionButton_UpdateAction` to refresh. Display **and** click now follow the
+  same slots the keypress targets. On revert (no form active) the attribute is
+  cleared so stale mappings can't persist.
+- Secure attribute writes are deferred out of combat (`flipPending` +
+  `PLAYER_REGEN_ENABLED`), same pattern as the rest of the layout.
+
 ## Keybind Summary
 
 ```
