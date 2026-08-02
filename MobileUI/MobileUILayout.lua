@@ -103,7 +103,11 @@ local function SaveOriginals()
     if saved.init then return end
     saved.init = true
     local mc = _G["MinimapCluster"]
-    if mc then saved.minimap = { points = SavePoints(mc) } end
+    if mc then
+        saved.minimap = { points = SavePoints(mc) }
+        local mm = _G["Minimap"]
+        if mm then saved.minimap.onMouseUp = mm:GetScript("OnMouseUp") end
+    end
     saved.micros = {}
     for _, name in ipairs(MICRO_BUTTONS) do
         local btn = _G[name]
@@ -189,16 +193,34 @@ local function SaveOriginals()
 end
 
 -- 1. Map
+-- Stock 3.3.5a fires Minimap_OnClick on ANY mouse-up over the minimap, which
+-- calls Minimap:PingLocation() (the yellow pulse other players see). We don't
+-- need that on mobile, so while the layout is active a click opens the full
+-- world map instead (same as the M key: ToggleFrame(WorldMapFrame)). The whole
+-- minimap square becomes the hit area (no radius check) = bigger touch target.
+local function MinimapClick_OpenMap()
+    ToggleFrame(WorldMapFrame)
+end
 local function ApplyMap()
     local mc = _G["MinimapCluster"]
     if not mc then MobileUI_Debug("ApplyMap: MinimapCluster NOT FOUND") return end
     mc:ClearAllPoints()
     mc:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
+    local mm = _G["Minimap"]
+    if mm then
+        mm:SetScript("OnMouseUp", MinimapClick_OpenMap)
+        MobileUI_Debug("ApplyMap: minimap click -> full map (ping disabled)")
+    end
     MobileUI_Debug("ApplyMap: minimap moved to TOPLEFT")
 end
 local function RevertMap()
     local mc = _G["MinimapCluster"]
     if mc and saved.minimap then RestorePoints(mc, saved.minimap.points) end
+    local mm = _G["Minimap"]
+    if mm and saved.minimap and saved.minimap.onMouseUp then
+        mm:SetScript("OnMouseUp", saved.minimap.onMouseUp)
+        MobileUI_Debug("RevertMap: minimap click restored (ping enabled)")
+    end
 end
 
 -- 1b. Buff Frame → move to the RIGHT of minimap (minimap is at top-left)

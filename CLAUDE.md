@@ -68,6 +68,7 @@ MobileUI exposes a slider going **below** 90 (range 10–90, step 5), using `Set
 
 ### ✅ Phase 2: Mobile Layout Revamp
 - [x] Map: MinimapCluster moved from top-right to top-left
+- [x] Minimap click opens the full world map (`ToggleFrame(WorldMapFrame)`, same as M key) instead of the group ping — stock `Minimap_OnClick` → `Minimap:PingLocation()` is replaced while the layout is active; original `OnMouseUp` script saved & restored on revert (bigger touch target: whole minimap square, no radius check)
 - [x] Menu bar: 10 micro buttons → top-right horizontal circle row (26px)
 - [x] Bags: single backpack icon at bottom-left; click opens all bag windows repositioned to the left side
 - [x] Action bar: ActionButton1-12 → 4-layer concentric scatter in bottom-right quarter-circle (60/48/40/32px)
