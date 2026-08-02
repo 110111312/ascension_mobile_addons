@@ -25,7 +25,7 @@ local BAG_BUTTONS = {
 local HIDE_FRAMES = {
     "MainMenuBar", "MainMenuBarArtFrame", "MainMenuExpBar",
     "ReputationWatchBar", "ActionBarUpButton", "ActionBarDownButton",
-    "MainMenuBarPageNumber", "MultiBarBottomLeft", "MultiBarBottomRight",
+    "MainMenuBarPageNumber", "MultiBarBottomRight",
     "MultiBarLeft", "MultiBarRight",
 }
 local PLAYER_HIDE = {
@@ -190,6 +190,10 @@ local function SaveOriginals()
         local f = _G[name]
         if f then saved.buffs[name] = { points = SavePoints(f) } end
     end
+    -- Save MultiBarBottomLeft bar position (we park it off-screen while the
+    -- layout is active; the scatter buttons must stay attached to it)
+    local mbl = _G["MultiBarBottomLeft"]
+    if mbl then saved.multibarBottomLeft = { points = SavePoints(mbl) } end
 end
 
 -- 1. Map
@@ -423,12 +427,16 @@ local function ApplyActionBar()
         end
     end
     -- Action bar 2 (MultiBarBottomLeft): buttons 13-15
+    -- IMPORTANT: do NOT reparent these buttons. This Ascension client resolves
+    -- a button's slot from the bar it is attached to (MultiBarBottomLeft =
+    -- slots 61-63 here). Reparenting to UIParent makes them fall back to their
+    -- id (1-3) and collide with the main bar. Reposition via UIParent anchors
+    -- instead; the bar frame itself is parked off-screen by ApplyHideFrames.
     for _, i in ipairs(ACTION2_BUTTONS) do
         local src = i - 12
         local btn = _G["MultiBarBottomLeftButton" .. src]
         if btn then
             local cfg = ACTION_BUTTONS[i]
-            btn:SetParent(UIParent)
             btn:ClearAllPoints()
             btn:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", cfg.x, cfg.y)
             btn:SetSize(cfg.size, cfg.size)
@@ -596,11 +604,23 @@ local function RevertPlayerFrame()
 end
 
 -- Hide Bottom Bar Art + OnUpdate Guard
+-- MultiBarBottomLeft is NOT hidden: the scatter buttons must stay attached to it
+-- for correct slot resolution. Instead it is parked off-screen (shown, but at
+-- (-1000,-1000)) so its remaining buttons are out of view.
+local function ParkBottomLeftBar()
+    local mbl = _G["MultiBarBottomLeft"]
+    if mbl then
+        mbl:ClearAllPoints()
+        mbl:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", -1000, -1000)
+        mbl:Show()
+    end
+end
 local function ApplyHideFrames()
     for _, name in ipairs(HIDE_FRAMES) do
         local f = _G[name]
         if f then f:Hide() end
     end
+    ParkBottomLeftBar()
     if not guardFrame then
         guardFrame = CreateFrame("Frame")
         guardFrame:SetScript("OnUpdate", function()
@@ -608,6 +628,17 @@ local function ApplyHideFrames()
             for _, name in ipairs(HIDE_FRAMES) do
                 local f = _G[name]
                 if f and f:IsShown() then f:Hide() end
+            end
+            -- MultiBarBottomLeft: keep parked off-screen but SHOWN (slot
+            -- resolution depends on the buttons staying attached to it)
+            local mbl = _G["MultiBarBottomLeft"]
+            if mbl then
+                if not mbl:IsShown() then mbl:Show() end
+                local pt, rel, relPt, x, y = mbl:GetPoint(1)
+                if not rel or rel ~= UIParent or x ~= -1000 then
+                    mbl:ClearAllPoints()
+                    mbl:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", -1000, -1000)
+                end
             end
             -- Keep action button hotkeys/names hidden
             for _, f in ipairs(HOTKEY_FRAMES) do
@@ -620,6 +651,8 @@ local function ApplyHideFrames()
 end
 local function RevertHideFrames()
     if guardFrame then guardFrame:Hide() end
+    local mbl, sv = _G["MultiBarBottomLeft"], saved.multibarBottomLeft
+    if mbl and sv then RestorePoints(mbl, sv.points) end
     for _, name in ipairs(HIDE_FRAMES) do
         local f, sv = _G[name], saved.hides and saved.hides[name]
         if f and sv then f:Show() end

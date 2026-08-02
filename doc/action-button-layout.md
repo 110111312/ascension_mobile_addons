@@ -29,6 +29,39 @@ Action buttons are arranged in a quarter-circle arc centered at the bottom-right
 | 14  | e       | MultiBarBottomLeftButton2      | 51   | -86   | 298 | 4     | Equidistant to btn 5 & 6 (70px)|
 | 15  | r       | MultiBarBottomLeftButton3      | 51   | -20   | 316 | 4     | Above btn 5, right-aligned     |
 
+## Critical Constraint: Never Reparent MultiBarBottomLeft Buttons
+
+**Root cause of the "scatter shows main bar 1-2-3" bug (fixed Aug 2026):**
+
+This Ascension client does **not** use stock WoW's action-bar slot numbering.
+Empirically verified via in-game diagnostics (`ActionButton_CalculateAction` + `UseAction` hooks):
+
+- Stock WoW: `MultiBarBottomLeftButton1-3` → slots **13-15**
+- Ascension: `MultiBarBottomLeftButton1-3` → slots **61-63** (when attached to their bar)
+
+The client resolves a button's slot **from the bar frame it is attached to**.
+If a bar-2 button is reparented away from `MultiBarBottomLeft` (e.g. to
+`UIParent`), the client falls back to resolving it by **button ID** (1, 2, 3) —
+the same IDs as `ActionButton1-3` — so the scatter buttons become clones of the
+main bar's first three buttons: assigning a skill to scatter-13 writes to slot 1
+(visible on main button 1), and Q/E/R (bound to `MULTIACTIONBAR1BUTTON1-3`)
+cast slots 1-3.
+
+**The fix (current implementation):**
+
+- The scatter buttons are **never reparented** — they stay children of
+  `MultiBarBottomLeft` (→ resolve to free slots 61-63).
+- The bar frame cannot be hidden (hidden parent = children don't render), so it
+  is **parked off-screen**: shown, anchored `BOTTOMLEFT (-1000, -1000)`. The
+  guard `OnUpdate` re-parks it every frame and keeps it shown.
+- The 3 buttons are repositioned to the scatter spots with `UIParent`-relative
+  anchors (`SetPoint("BOTTOMRIGHT", UIParent, ...)`) — anchors are independent
+  of the parent, so they render at the arc position despite the parked bar.
+- Revert restores the bar's original points.
+
+Q/E/R bindings are unchanged: `Q/E/R → MULTIACTIONBAR1BUTTON1-3` → those buttons
+→ slots 61-63. Assign skills to the scatter buttons and the keys work.
+
 ## Keybind Summary
 
 ```
