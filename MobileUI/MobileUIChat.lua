@@ -57,16 +57,7 @@ function MobileUI:CreateChatBubble()
     chatBubble:RegisterForClicks("LeftButtonUp")
     chatBubble:RegisterForDrag("LeftButton")
 
-    if MobileDB.bubbleX and MobileDB.bubbleY then
-        chatBubble:SetPoint(MobileDB.bubblePoint or "BOTTOMLEFT",
-            UIParent, MobileDB.bubbleRelPoint or "BOTTOMLEFT",
-            MobileDB.bubbleX, MobileDB.bubbleY)
-    else
-        -- Default: bottom-left, raised above the bag icon (mobile layout)
-        -- or above the action bar (default layout)
-        local defaultY = MobileDB.layoutEnabled and 82 or 64
-        chatBubble:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 2, defaultY)
-    end
+    MobileUI:PositionChatBubble()
 
     chatBubble:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIcon-Chat-Up")
     chatBubble:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIcon-Chat-Down")
@@ -96,6 +87,33 @@ function MobileUI:CreateChatBubble()
     end)
     chatBubble:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
     chatBubble:Show()
+end
+
+-- ============================================================================
+-- Bubble positioning
+-- ============================================================================
+-- Mobile layout: the bubble sits just above the bag icon.  MobileUIBagButton
+-- is at BOTTOMLEFT (10, 10) and is 48x48, so its top edge is y=58; the bubble
+-- (32x32) anchors BOTTOMLEFT (10, 62) -> same left edge as the bag, 4px above.
+-- Default (layout off): raised above the action bar.
+-- A saved drag position (MobileDB.bubbleX/Y) always wins over the defaults.
+
+function MobileUI:PositionChatBubble()
+    if not chatBubble then return end
+    chatBubble:ClearAllPoints()
+    if MobileDB.bubbleX and MobileDB.bubbleY then
+        chatBubble:SetPoint(MobileDB.bubblePoint or "BOTTOMLEFT",
+            UIParent, MobileDB.bubbleRelPoint or "BOTTOMLEFT",
+            MobileDB.bubbleX, MobileDB.bubbleY)
+        return
+    end
+    if MobileDB.layoutEnabled then
+        -- Just above the bag icon, same left edge (x=10); 4px gap.
+        chatBubble:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 10, 62)
+    else
+        -- Default: bottom-left, raised above the action bar.
+        chatBubble:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 2, 64)
+    end
 end
 
 -- ============================================================================

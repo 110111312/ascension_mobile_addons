@@ -190,6 +190,9 @@ local function SaveOriginals()
         local f = _G[name]
         if f then saved.buffs[name] = { points = SavePoints(f) } end
     end
+    -- ChatFrame1: original position, so layout revert restores it exactly
+    local cf = _G["ChatFrame1"]
+    if cf then saved.chatFrame = { points = SavePoints(cf) } end
     -- Save MultiBarBottomLeft bar position (we park it off-screen while the
     -- layout is active; the scatter buttons must stay attached to it)
     local mbl = _G["MultiBarBottomLeft"]
@@ -603,6 +606,43 @@ local function RevertPlayerFrame()
     end
 end
 
+-- 6. Chat Frame: lift it so its "to newest" scroll button sits just above
+-- the chat bubble (which itself sits just above the bag icon).
+-- 3.3.5 FrameXML geometry: the scroll-button strip (ChatFrame1ButtonFrame) is
+-- anchored to the chat frame's LEFT edge at x=-4 (29px wide, full height).
+-- ChatFrame1ButtonFrameBottomButton ("to newest") is 32x32, anchored BOTTOM of
+-- that strip at y=-7 -> its bottom edge is 7px below the chat frame's bottom,
+-- horizontally centered at chatFrameLeft - 18.5.
+-- ChatFrame1 at BOTTOMLEFT (44.5, 99) => button bottom y = 99-7 = 92, x-span
+-- [10, 42] = 2px below the bubble top (94) -- the SAME facing-edge offset
+-- (-2) the down button uses against the "to newest" button, so the bubble
+-- sits at the same visual distance as the button stack spacing.
+-- The tab strip (GENERAL_CHAT_DOCK) follows automatically: FCFDock_SetPrimary
+-- anchors the dock's BOTTOMLEFT to ChatFrame1's TOPLEFT (+6).  The chat-menu
+-- and social buttons follow via their anchors to the button stack.
+local function ApplyChatFrame()
+    local cf = _G["ChatFrame1"]
+    if cf then
+        cf:ClearAllPoints()
+        cf:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 44.5, 99)
+        MobileUI_Debug("ApplyChatFrame: ChatFrame1 -> BOTTOMLEFT (44.5, 99)")
+    end
+    -- Keep the bubble glued just above the bag (also covers layout toggles)
+    if MobileUI and MobileUI.PositionChatBubble then
+        MobileUI:PositionChatBubble()
+    end
+end
+local function RevertChatFrame()
+    local cf = _G["ChatFrame1"]
+    if cf and saved.chatFrame then
+        RestorePoints(cf, saved.chatFrame.points)
+        MobileUI_Debug("RevertChatFrame: ChatFrame1 position restored")
+    end
+    if MobileUI and MobileUI.PositionChatBubble then
+        MobileUI:PositionChatBubble()
+    end
+end
+
 -- Hide Bottom Bar Art + OnUpdate Guard
 -- MultiBarBottomLeft is NOT hidden: the scatter buttons must stay attached to it
 -- for correct slot resolution. Instead it is parked off-screen (shown, but at
@@ -697,6 +737,7 @@ function MobileUILayout:Apply()
     step("ApplyBags", ApplyBags)
     step("ApplyActionBar", ApplyActionBar)
     step("ApplyPlayerFrame", ApplyPlayerFrame)
+    step("ApplyChatFrame", ApplyChatFrame)
     step("ApplyHideFrames", ApplyHideFrames)
     MobileUI_Debug("=== Layout applied ===")
 end
@@ -715,5 +756,6 @@ function MobileUILayout:Revert()
     RevertBags()
     RevertActionBar()
     RevertPlayerFrame()
+    RevertChatFrame()
     MobileUI_Debug("Layout reverted.")
 end
