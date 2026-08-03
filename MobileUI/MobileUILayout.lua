@@ -672,6 +672,9 @@ function MobileUILayout.ApplyFlip()
         end
     end
     RefreshScatterButtons()
+    local b1 = _G["ActionButton1"]
+    MobileUI_Debug(string.format("Flip: fp=%s attr1=%s", tostring(fp),
+        b1 and tostring(SecureButton_GetModifiedAttribute(b1, "actionpage")) or "?"))
 end
 
 function MobileUILayout.EnsureFlipWatcher()
@@ -683,9 +686,10 @@ function MobileUILayout.EnsureFlipWatcher()
     flipFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
     flipFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     flipFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-    flipFrame:SetScript("OnEvent", function()
+    flipFrame:SetScript("OnEvent", function(_, event, arg1)
         -- Combat-safe: ApplyFlip only sets attributes (secure channel) and
         -- draws icon textures.
+        MobileUI_Debug("Evt: " .. event .. (arg1 ~= nil and (" arg=" .. tostring(arg1)) or ""))
         MobileUILayout.ApplyFlip()
     end)
 end
@@ -869,9 +873,27 @@ local function ApplyHideFrames()
             self._t = (self._t or 0) + elapsed
             if self._t >= 0.25 then
                 self._t = 0
-                local state = string.format("%d|%d", GetActionBarPage() or 1, GetBonusBarOffset() or 0)
+                local page = GetActionBarPage() or 1
+                local off = GetBonusBarOffset() or 0
+                local state = string.format("%d|%d", page, off)
                 if state ~= self._flipState then
+                    local prevOff = self._flipOff
                     self._flipState = state
+                    self._flipOff = off
+                    MobileUI_Debug(string.format("Poll: page=%d off=%d stealth=%s form=%s cpage=%s",
+                        page, off, tostring(IsStealthed()), GetShapeshiftForm() or 0,
+                        tostring(CURRENT_ACTIONBAR_PAGE)))
+                    -- EXPERIMENT: the C-side keypress resolver appears to stay
+                    -- on the bonus page after the first unstealth (keys die
+                    -- while the Lua-side display flips back fine). On every
+                    -- unstealth transition (bonus offset 1->0) force the
+                    -- client's internal page back to 1. ChangeActionBarPage is
+                    -- not restricted, so this also works during combat.
+                    if off == 0 and prevOff and prevOff > 0 then
+                        local ok, err = pcall(ChangeActionBarPage, 1)
+                        MobileUI_Debug("Flip: reset C-side page (unstealth): " .. tostring(ok)
+                            .. (err and (" " .. tostring(err)) or ""))
+                    end
                     MobileUILayout.ApplyFlip()
                 end
             end
