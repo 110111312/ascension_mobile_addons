@@ -515,11 +515,11 @@ local function ApplyActionBar()
 end
 local function RevertActionBar()
     HOTKEY_FRAMES = {}  -- stop guard from hiding hotkeys/names
-    -- Clear any actionpage mirroring the flip follower applied, so the stock
-    -- bar is left exactly as the client manages it.
+    -- Clear the isBonus flip mirror so the stock bar is left exactly as the
+    -- client manages it (isBonus is a plain field — no pcall needed).
     for i = 1, 12 do
         local btn = _G["ActionButton" .. i]
-        if btn then pcall(function() btn:SetAttribute("actionpage", nil) end) end
+        if btn then btn.isBonus = nil end
     end
     for i = 1, 12 do
         local btn = _G["ActionButton" .. i]
@@ -586,51 +586,66 @@ end
 -- never recompute on their own, so display and click stay on page 1 while
 -- keypresses go elsewhere. Driven by a 0.25s state poll in guardFrame's
 -- OnUpdate (this client fires no page/shapeshift events), the follower
--- mirrors the client's choice by setting the 'actionpage' attribute on the
--- buttons (self attribute overrides the parent chain) so display AND click
--- follow the same slots the keypress targets. The target page is derived
--- generically from the client (see GetFlipPage): page flip, bonus offset,
--- stealth, then a small form fallback table.
--- Attribute writes are protected during combat, so those are deferred like
--- the rest of the layout (PLAYER_REGEN_ENABLED).
+-- mirrors the client's choice by toggling the button's 'isBonus' flag — the
+-- exact hook stock ActionButton_CalculateAction already uses to resolve
+-- bonus-bar buttons — so display, click, and keypress all follow the same
+-- slots. isBonus is a plain Lua field, so it (and the manual icon refresh
+-- used in combat) work even under combat lockdown; the alternative hook
+-- (the 'actionpage' attribute) is protected in combat and froze the flip
+-- whenever stealth changed mid-fight.
 local flipFrame
-local flipPending -- true => attribute mirror deferred until out of combat
-
-local FLIP_PAGE_BY_CLASS = {
-    ROGUE   = { [1] = 2, [2] = 2 },           -- stealth (form 1 or 2) -> page 2
-    WARRIOR = { [1] = 3, [2] = 4, [3] = 5 },  -- battle / defensive / berserker
-}
 
 -- The CLIENT owns the stance->bar mapping; we only mirror it. Generic rules
 -- in priority order — no per-class guessing for normal cases:
 --   1. Stock 3.3.5a: entering a form flips GetActionBarPage() -> follow it.
 --   2. This client: entering stealth/stance shows the BONUS bar
 --      (GetBonusBarOffset() > 0) — the exact condition stock
---      BonusActionBarFrame uses to show itself -> mirror it via the
---      actionpage attribute (bonus page = NUM_ACTIONBAR_PAGES + offset).
---   3. Fallbacks only when neither moves: IsStealthed() -> stock page 2,
---      then the form table below for classes with stable mappings.
-local function GetFlipPage()
-    local page = GetActionBarPage()
-    if page and page > 1 then return page end
-    local off = GetBonusBarOffset()
-    if off and off > 0 then return (NUM_ACTIONBAR_PAGES or 6) + off end
-    if IsStealthed() then return 2 end
-    local form = GetShapeshiftForm() or 0
-    if form == 0 then return 1 end
-    local _, class = UnitClass("player")
-    local map = FLIP_PAGE_BY_CLASS[class]
-    if map and map[form] then return map[form] end
-    return 1
+--      BonusActionBarFrame uses to show itself. We mirror it by toggling
+--      isBonus: stock ActionButton_CalculateAction resolves isBonus buttons
+--      to NUM_ACTIONBAR_PAGES + GetBonusBarOffset() when the page is 1,
+--      which is exactly the bonus page our flip needs.
+
+-- Resolve the page the client would compute for this button right now
+-- (mirrors ActionButton_CalculateAction for our buttons: no actionpage
+-- attribute set, page pinned at 1, optional bonus-bar branch).
+local function ResolveActionPage(btn)
+    local page = GetActionBarPage() or 1
+    if btn.isBonus and page == 1 then
+        page = (NUM_ACTIONBAR_PAGES or 6) + (GetBonusBarOffset() or 0)
+    end
+    return page
 end
 
 local function RefreshScatterButtons()
-    for i = 1, 12 do
-        local btn = _G["ActionButton" .. i]
-        if btn then
-            local ok, err = pcall(ActionButton_UpdateAction, btn)
-            if not ok then
-                MobileUI_Debug("Flip: ActionButton" .. i .. " update failed: " .. tostring(err))
+    if InCombatLockdown() then
+        -- Manual refresh: the full ActionButton_UpdateAction path calls
+        -- self:Show()/Hide() on the protected button (blocked in combat).
+        -- Icons are plain textures, so flip the display by setting the
+        -- icon directly. self.action is kept in sync for tooltips.
+        for i = 1, 12 do
+            local btn = _G["ActionButton" .. i]
+            if btn then
+                local id = btn:GetID()
+                if not id or id < 1 then id = i end
+                btn.action = id + (ResolveActionPage(btn) - 1) * (NUM_ACTIONBAR_BUTTONS or 12)
+                local icon = _G[btn:GetName() .. "Icon"]
+                local tex = GetActionTexture(btn.action)
+                if tex then
+                    icon:SetTexture(tex)
+                    icon:Show()
+                else
+                    icon:Hide()
+                end
+            end
+        end
+    else
+        for i = 1, 12 do
+            local btn = _G["ActionButton" .. i]
+            if btn then
+                local ok, err = pcall(ActionButton_UpdateAction, btn)
+                if not ok then
+                    MobileUI_Debug("Flip: ActionButton" .. i .. " update failed: " .. tostring(err))
+                end
             end
         end
     end
@@ -638,27 +653,13 @@ end
 
 function MobileUILayout.ApplyFlip()
     if not MobileDB or not MobileDB.layoutEnabled then return end
-    if InCombatLockdown() then
-        flipPending = true -- re-apply on PLAYER_REGEN_ENABLED
-        return
-    end
-    flipPending = nil
-    local page = GetActionBarPage()
-    local fp = GetFlipPage()
-    if page == 1 then
-        -- Client keeps the Lua page pinned: mirror the flip via the
-        -- actionpage attribute (self attribute overrides the parent chain).
-        for i = 1, 12 do
-            local btn = _G["ActionButton" .. i]
-            if btn then
-                local ok, err = pcall(function()
-                    if fp > 1 then btn:SetAttribute("actionpage", fp)
-                    else btn:SetAttribute("actionpage", nil) end
-                end)
-                if not ok then
-                    MobileUI_Debug("Flip: ActionButton" .. i .. " attr failed: " .. tostring(err))
-                end
-            end
+    -- Mirror the client's bar choice. isBonus is a plain field — safe to
+    -- toggle in or out of combat, unlike the actionpage attribute.
+    local bonus = (GetActionBarPage() or 1) == 1 and (GetBonusBarOffset() or 0) > 0
+    for i = 1, 12 do
+        local btn = _G["ActionButton" .. i]
+        if btn and btn.isBonus ~= bonus then
+            btn.isBonus = bonus
         end
     end
     RefreshScatterButtons()
@@ -668,15 +669,14 @@ function MobileUILayout.EnsureFlipWatcher()
     if flipFrame then return end
     flipFrame = CreateFrame("Frame")
     flipFrame:RegisterEvent("ACTIONBAR_PAGE_CHANGED")
+    flipFrame:RegisterEvent("UPDATE_BONUS_ACTIONBAR")
+    flipFrame:RegisterEvent("UPDATE_STEALTH")
     flipFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
     flipFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     flipFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-    flipFrame:SetScript("OnEvent", function(_, event)
-        if event == "PLAYER_REGEN_ENABLED" then
-            if flipPending then MobileUILayout.ApplyFlip() end
-        else
-            MobileUILayout.ApplyFlip()
-        end
+    flipFrame:SetScript("OnEvent", function()
+        -- Combat-safe: ApplyFlip only touches plain fields + icon textures.
+        MobileUILayout.ApplyFlip()
     end)
 end
 
@@ -853,13 +853,13 @@ local function ApplyHideFrames()
             if not MobileDB or not MobileDB.layoutEnabled then return end
             -- Flip follower state check (0.25s throttle). The client may not
             -- fire ACTIONBAR_PAGE_CHANGED/UPDATE_SHAPESHIFT_FORM, so poll
-            -- here — this OnUpdate is guaranteed to run every frame.
+            -- here — this OnUpdate is guaranteed to run every frame. State is
+            -- just the two signals the flip reads: the action-bar page and
+            -- the bonus-bar offset (this client's stance/stealth bar).
             self._t = (self._t or 0) + elapsed
             if self._t >= 0.25 then
                 self._t = 0
-                local state = string.format("%d|%d|%d|%d",
-                    GetActionBarPage(), GetShapeshiftForm() or 0,
-                    IsStealthed() and 1 or 0, GetBonusBarOffset() or 0)
+                local state = string.format("%d|%d", GetActionBarPage() or 1, GetBonusBarOffset() or 0)
                 if state ~= self._flipState then
                     self._flipState = state
                     MobileUILayout.ApplyFlip()
