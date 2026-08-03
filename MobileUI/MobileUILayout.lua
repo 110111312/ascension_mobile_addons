@@ -865,6 +865,15 @@ local function ApplyHideFrames()
                     MobileUILayout.ApplyFlip()
                 end
             end
+            -- Everything below Show()/Hide()s PROTECTED frames (the stock
+            -- bars and bar buttons). During combat lockdown those calls are
+            -- blocked and TAINT the frames — which then surfaces as
+            -- "MobileUI tainted the call of the secure function
+            -- 'UseAction()'" on the next button click. Pause that
+            -- enforcement during combat; the stock bar briefly showing is
+            -- cosmetic, and full enforcement resumes the frame combat ends.
+            -- (The flip poll above is pure Lua and stays active in combat.)
+            if InCombatLockdown() then return end
             for _, name in ipairs(HIDE_FRAMES) do
                 local f = _G[name]
                 if f and f:IsShown() then f:Hide() end
