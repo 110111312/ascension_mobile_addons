@@ -663,8 +663,13 @@ function MobileUILayout.ApplyFlip()
         local btn = _G["ActionButton" .. i]
         if btn then
             local ok, err = pcall(function()
+                -- Use an explicit 1 (not nil): the client's C-side keypress
+                -- resolver appears to cache the actionpage attribute, and a
+                -- nil-clear leaves it stuck on the bonus page after unstealth
+                -- (keys then cast the stealth bar's slots). A numeric write
+                -- propagates; display is identical (page 1 either way).
                 if fp > 1 then btn:SetAttribute("actionpage", fp)
-                else btn:SetAttribute("actionpage", nil) end
+                else btn:SetAttribute("actionpage", 1) end
             end)
             if not ok then
                 MobileUI_Debug("Flip: ActionButton" .. i .. " attr failed: " .. tostring(err))
@@ -880,9 +885,11 @@ local function ApplyHideFrames()
                     local prevOff = self._flipOff
                     self._flipState = state
                     self._flipOff = off
-                    MobileUI_Debug(string.format("Poll: page=%d off=%d stealth=%s form=%s cpage=%s",
+                    local bf = BonusActionBarFrame
+                    MobileUI_Debug(string.format("Poll: page=%d off=%d stealth=%s form=%s cpage=%s bonusShown=%s bstate=%s",
                         page, off, tostring(IsStealthed()), GetShapeshiftForm() or 0,
-                        tostring(CURRENT_ACTIONBAR_PAGE)))
+                        tostring(CURRENT_ACTIONBAR_PAGE),
+                        tostring(bf and bf:IsShown()), bf and tostring(bf.state) or "?"))
                     -- EXPERIMENT: the C-side keypress resolver appears to stay
                     -- on the bonus page after the first unstealth (keys die
                     -- while the Lua-side display flips back fine). On every
@@ -890,6 +897,15 @@ local function ApplyHideFrames()
                     -- client's internal page back to 1. ChangeActionBarPage is
                     -- not restricted, so this also works during combat.
                     if off == 0 and prevOff and prevOff > 0 then
+                        -- EXPERIMENT: the client's C-side keypress resolver may
+                        -- route ACTIONBUTTON keys to the bonus bar while
+                        -- BonusActionBarFrame is shown and never switch back if
+                        -- it fails to hide. Force-hide it on unstealth.
+                        local bf = BonusActionBarFrame
+                        if bf and bf:IsShown() then
+                            MobileUI_Debug("Flip: unstealth but BonusActionBarFrame STILL SHOWN — hiding")
+                            bf:Hide()
+                        end
                         local ok, err = pcall(ChangeActionBarPage, 1)
                         MobileUI_Debug("Flip: reset C-side page (unstealth): " .. tostring(ok)
                             .. (err and (" " .. tostring(err)) or ""))
