@@ -667,16 +667,11 @@ function MobileUILayout.ApplyFlip()
                 else btn:SetAttribute("actionpage", nil) end
             end)
             if not ok then
-                MobileUI_Debug("Flip: attr blocked btn" .. i .. ": " .. tostring(err)) -- diagnostic
+                MobileUI_Debug("Flip: ActionButton" .. i .. " attr failed: " .. tostring(err))
             end
         end
     end
     RefreshScatterButtons()
-    -- Diagnostic: capture the resolved state (removed once diagnosed).
-    local b1 = _G["ActionButton1"]
-    MobileUI_Debug(string.format("Flip: page=%d off=%d fp=%s b1.attrPage=%s",
-        page, GetBonusBarOffset() or 0, tostring(fp),
-        b1 and tostring(SecureButton_GetModifiedAttribute(b1, "actionpage")) or "?"))
 end
 
 function MobileUILayout.EnsureFlipWatcher()
@@ -688,11 +683,9 @@ function MobileUILayout.EnsureFlipWatcher()
     flipFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
     flipFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     flipFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-    flipFrame:SetScript("OnEvent", function(_, event)
-        -- Combat-safe: ApplyFlip only touches plain fields + icon textures.
-        if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
-            MobileUI_Debug("Combat: " .. event) -- diagnostic, removed once diagnosed
-        end
+    flipFrame:SetScript("OnEvent", function()
+        -- Combat-safe: ApplyFlip only sets attributes (secure channel) and
+        -- draws icon textures.
         MobileUILayout.ApplyFlip()
     end)
 end
@@ -890,14 +883,7 @@ local function ApplyHideFrames()
             -- enforcement during combat; the stock bar briefly showing is
             -- cosmetic, and full enforcement resumes the frame combat ends.
             -- (The flip poll above is pure Lua and stays active in combat.)
-            if InCombatLockdown() then
-                if not self._combatPaused then
-                    self._combatPaused = true
-                    MobileUI_Debug("Guard: combat — protected enforcement paused (taint-safe)") -- diagnostic
-                end
-                return
-            end
-            self._combatPaused = nil
+            if InCombatLockdown() then return end
             for _, name in ipairs(HIDE_FRAMES) do
                 local f = _G[name]
                 if f and f:IsShown() then f:Hide() end
