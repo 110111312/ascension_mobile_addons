@@ -663,6 +663,12 @@ function MobileUILayout.ApplyFlip()
         end
     end
     RefreshScatterButtons()
+    -- Diagnostic: capture the resolved state so we can correlate with the
+    -- 'tainted the call of UseAction()' error (removed once diagnosed).
+    local b1 = _G["ActionButton1"]
+    MobileUI_Debug(string.format("Flip: page=%d off=%d bonus=%s b1.isBonus=%s b1.action=%s",
+        GetActionBarPage() or 1, GetBonusBarOffset() or 0, tostring(bonus),
+        b1 and tostring(b1.isBonus) or "?", b1 and tostring(b1.action) or "?"))
 end
 
 function MobileUILayout.EnsureFlipWatcher()
@@ -674,8 +680,11 @@ function MobileUILayout.EnsureFlipWatcher()
     flipFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
     flipFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     flipFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-    flipFrame:SetScript("OnEvent", function()
+    flipFrame:SetScript("OnEvent", function(_, event)
         -- Combat-safe: ApplyFlip only touches plain fields + icon textures.
+        if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
+            MobileUI_Debug("Combat: " .. event) -- diagnostic, removed once diagnosed
+        end
         MobileUILayout.ApplyFlip()
     end)
 end
@@ -873,7 +882,14 @@ local function ApplyHideFrames()
             -- enforcement during combat; the stock bar briefly showing is
             -- cosmetic, and full enforcement resumes the frame combat ends.
             -- (The flip poll above is pure Lua and stays active in combat.)
-            if InCombatLockdown() then return end
+            if InCombatLockdown() then
+                if not self._combatPaused then
+                    self._combatPaused = true
+                    MobileUI_Debug("Guard: combat — protected enforcement paused (taint-safe)") -- diagnostic
+                end
+                return
+            end
+            self._combatPaused = nil
             for _, name in ipairs(HIDE_FRAMES) do
                 local f = _G[name]
                 if f and f:IsShown() then f:Hide() end
