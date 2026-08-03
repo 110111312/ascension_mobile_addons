@@ -46,6 +46,20 @@ local PLAYER_HIDE = {
     "PlayerRestStateGlow", "PlayerAttackGlow", "PlayerPVPIcon",
     "PlayerFrameLeaderIcon", "PlayerFrameMasterIcon", "PlayerFrameVehicleFeedback",
     "PlayerLevelText",
+    "PlayerAttackIcon", "PlayerStatusGlow", "PlayerAttackBackground",
+    "PlayerRestIcon", "PlayerRestGlow",
+}
+-- Condition-shown overlay frames (combat red flicker, resting zzz, pvp flag,
+-- damage flash). Blizzard re-shows these itself on PLAYER_ENTER_COMBAT /
+-- PLAYER_REGEN_DISABLED / PLAYER_UPDATE_RESTING / UNIT_FACTION, etc., but
+-- never re-anchors them (only Show/SetVertexColor/SetAlpha). So instead of
+-- fighting the re-show, park them 3000px below the frame: when the game shows
+-- them they render off-screen and stay invisible. Original points are saved
+-- and restored so revert puts them back exactly where they were.
+local PLAYER_OVERLAY = {
+    "PlayerStatusTexture", "PlayerAttackIcon", "PlayerAttackGlow",
+    "PlayerStatusGlow", "PlayerAttackBackground",
+    "PlayerRestIcon", "PlayerRestGlow", "PlayerPVPIcon", "PlayerFrameFlash",
 }
 local PLAYER_TEXT = {
     "PlayerFrameHealthBarText", "PlayerFrameManaBarText",
@@ -190,6 +204,11 @@ local function SaveOriginals()
         for _, name in ipairs(PLAYER_TEXT) do
             local f = _G[name]
             if f then saved.player.text[name] = { points = SavePoints(f), shown = f:IsShown() } end
+        end
+        saved.player.overlay = {}
+        for _, name in ipairs(PLAYER_OVERLAY) do
+            local f = _G[name]
+            if f then saved.player.overlay[name] = SavePoints(f) end
         end
     end
     saved.hides = {}
@@ -675,6 +694,15 @@ local function ApplyPlayerFrame()
         local f = _G[name]
         if f then f:Hide() end
     end
+    -- Park condition-shown overlays off-screen (Blizzard never re-anchors
+    -- them, so the re-show on combat/rest/pvp renders invisible)
+    for _, name in ipairs(PLAYER_OVERLAY) do
+        local f = _G[name]
+        if f then
+            f:ClearAllPoints()
+            f:SetPoint("TOPLEFT", pf, "TOPLEFT", 0, -3000)
+        end
+    end
     local roundedBD = {
         bgFile = "Interface\Tooltips\UI-Tooltip-Background",
         edgeFile = "Interface\Tooltips\UI-Tooltip-Border",
@@ -719,6 +747,13 @@ local function RevertPlayerFrame()
     for _, name in ipairs(PLAYER_HIDE) do
         local f = _G[name]
         if f and saved.player.hidden[name] then f:Show() end
+    end
+    -- Restore overlay frames to their original anchored positions
+    if saved.player.overlay then
+        for name, pts in pairs(saved.player.overlay) do
+            local f = _G[name]
+            if f then RestorePoints(f, pts) end
+        end
     end
     local hb = _G["PlayerFrameHealthBar"]
     if hb and saved.player.health then
