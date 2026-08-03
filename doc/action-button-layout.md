@@ -92,36 +92,64 @@ APIs before the fix).
 **not** flip to action-bar page 2 — pages 2–5 are completely empty in stealth.
 The stealth bar is the **bonus bar** (`BonusActionBarFrame`): in stealth
 `GetBonusBarOffset() = 1` → page 7, slots **73–84**. That's why the default UI
-shows the 2 auto-assigned stealth skills there, why `-` routes to the bonus
-buttons in stealth (stock `ActionButtonUp` checks `BonusActionBarFrame:IsShown()`
-first), and why `GetActionBarPage()` never moves (the bonus bar is an overlay,
-not a page flip).
+shows the 2 auto-assigned stealth skills there, and why `GetActionBarPage()`
+never moves (the bonus bar is an overlay, not a page flip).
 
-Also: this client fires **no** `ACTIONBAR_PAGE_CHANGED` /
-`UPDATE_SHAPESHIFT_FORM` events for stealth, and `GetShapeshiftForm()` is
-unreliable (reports 2, sometimes 0, while stealthed) — so `IsStealthed()` is
-the primary detector.
+**Events on this client:** `UPDATE_STEALTH`, `UPDATE_BONUS_ACTIONBAR`, and
+`UPDATE_SHAPESHIFT_FORM` **do** fire on stealth enter/exit. Order matters on
+unstealth: `UPDATE_STEALTH` fires while the bonus offset is still the *old*
+value, then `UPDATE_BONUS_ACTIONBAR` carries the change. `ACTIONBAR_PAGE_CHANGED`
+never fires, and `GetShapeshiftForm()` is unreliable (reports 2, sometimes 0,
+while stealthed). So the reliable driver is a **0.25s state poll** in the
+guardFrame `OnUpdate` comparing `GetActionBarPage()`/`GetBonusBarOffset()`;
+the `flipFrame` event watcher is a fast path on top.
 
-**Implementation (`MobileUILayout.ApplyFlip`, polled every 0.25s in the
-guardFrame `OnUpdate`):**
+**Implementation (`MobileUILayout.ApplyFlip`):**
 
 - The client owns the stance→bar mapping; the addon only mirrors it. The target
-  page is derived generically (`GetFlipPage`), in priority order:
-  1. `GetActionBarPage() > 1` → follow it (stock 3.3.5a behavior: the page
-     flips for every class/form).
+  page is resolved generically (no per-class guessing):
+  1. `GetActionBarPage() > 1` → follow it (stock 3.3.5a page flips).
   2. `GetBonusBarOffset() > 0` → bonus page `NUM_ACTIONBAR_PAGES + offset`
      (this client's stealth/stance mechanism — the same condition stock
      `BonusActionBarFrame` uses to show itself).
-  3. Fallbacks only when neither moves: `IsStealthed()` → page 2, then a small
-     form table (`ROGUE` stealth → 2, `WARRIOR` stances → 3/4/5).
-- Because `GetActionBarPage()` stays 1 here, the follower sets the `actionpage`
-  **attribute** on each `ActionButton1–12` (a self attribute overrides the
-  parent chain in `ActionButton_CalculateAction`), then calls
-  `ActionButton_UpdateAction` to refresh. Display **and** click now follow the
-  same slots the keypress targets. On revert (no form active) the attribute is
-  cleared so stale mappings can't persist.
-- Secure attribute writes are deferred out of combat (`flipPending` +
-  `PLAYER_REGEN_ENABLED`), same pattern as the rest of the layout.
+  3. Otherwise → 1.
+- The follower sets the `actionpage` **attribute** on each `ActionButton1–12`
+  (a self attribute overrides the parent chain in
+  `ActionButton_CalculateAction`), then refreshes the buttons. Display **and**
+  click now follow the same slots the keypress targets.
+- **Never write plain Lua fields on the buttons** (`isBonus`, `action`): doing
+  so **taints** the secure action chain on this client — the next click errors
+  with "AddOn 'MobileUI' tainted the call of the secure function 'UseAction()'"
+  and the cast is blocked. Attributes are the only safe channel.
+- On revert, the attribute is set to an explicit **1**, not cleared with `nil`:
+  the client's C-side keypress resolver caches the attribute, and a `nil`-clear
+  leaves it stuck on the bonus page after unstealth (keys then keep casting
+  stealth slots). Display is identical either way (page 1).
+- `SetAttribute` works during combat lockdown on this client (verified via
+  diagnostics) — **no combat deferral** is needed. Mid-combat refreshes draw
+  icons directly (`RefreshScatterButtons`): `ActionButton_UpdateAction` calls
+  protected `Show()`/`Hide()`, so in combat the refresh resolves the page
+  exactly as `ActionButton_CalculateAction` will at click time and sets the
+  icon texture (textures aren't protected).
+
+**The unstealth key-stall bug (root cause, fixed):** this client shows
+`BonusActionBarFrame` on stealth but **never hides it on unstealth** — the
+stock `HideBonusActionBar` slide path doesn't run on it (its animation state
+stays `nil`, and the stock function is gated on `MainMenuBar.busy`). The
+client's C-side keypress router targets the bonus bar **while that frame is
+shown**, so after the first unstealth, ACTIONBUTTON keys kept casting stealth
+slots even though the UI looked normal (display flip is pure Lua and kept
+working — hence "bar flips back but keys dead"). Fixes on the unstealth
+transition (bonus offset 1→0):
+
+- **Force-hide `BonusActionBarFrame`** — one-shot at the transition, plus a
+  persistent guard in the layout guard that keeps it hidden whenever
+  `GetBonusBarOffset() == 0`. `BonusActionBarFrame` is not a restricted frame,
+  so hiding it is taint-safe.
+- **`ChangeActionBarPage(1)`** on the same transition — empirically required
+  for the in-combat unstealth display flip. The page never visibly moves and
+  no event fires, but without it the bar froze on stealth skills when
+  unstealthing during combat.
 
 ## Keybind Summary
 
