@@ -648,11 +648,11 @@ end
 function MobileUILayout.ApplyFlip()
     if not MobileDB or not MobileDB.layoutEnabled then return end
     -- Mirror the client's bar choice via the actionpage ATTRIBUTE (secure
-    -- channel — field writes taint on this client). SetAttribute may be
-    -- blocked during combat lockdown; if so the pcall catches it and the
-    -- flip applies when combat ends (the watcher re-runs on
-    -- PLAYER_REGEN_ENABLED, and the display mirrors the stale attr in the
-    -- meantime, so click and display stay consistent).
+    -- channel — field writes taint on this client). SetAttribute works even
+    -- during combat lockdown on this client (verified via diagnostics), so
+    -- the flip applies immediately on every state change; the pcall below
+    -- is belt-and-braces. Display, click, and keypress all resolve through
+    -- the same attribute, so they always agree.
     local page = GetActionBarPage() or 1
     local fp = page
     if page == 1 then
