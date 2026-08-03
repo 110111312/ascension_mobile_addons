@@ -677,9 +677,6 @@ function MobileUILayout.ApplyFlip()
         end
     end
     RefreshScatterButtons()
-    local b1 = _G["ActionButton1"]
-    MobileUI_Debug(string.format("Flip: fp=%s attr1=%s", tostring(fp),
-        b1 and tostring(SecureButton_GetModifiedAttribute(b1, "actionpage")) or "?"))
 end
 
 function MobileUILayout.EnsureFlipWatcher()
@@ -691,10 +688,9 @@ function MobileUILayout.EnsureFlipWatcher()
     flipFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
     flipFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     flipFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-    flipFrame:SetScript("OnEvent", function(_, event, arg1)
+    flipFrame:SetScript("OnEvent", function()
         -- Combat-safe: ApplyFlip only sets attributes (secure channel) and
         -- draws icon textures.
-        MobileUI_Debug("Evt: " .. event .. (arg1 ~= nil and (" arg=" .. tostring(arg1)) or ""))
         MobileUILayout.ApplyFlip()
     end)
 end
@@ -885,30 +881,21 @@ local function ApplyHideFrames()
                     local prevOff = self._flipOff
                     self._flipState = state
                     self._flipOff = off
-                    local bf = BonusActionBarFrame
-                    MobileUI_Debug(string.format("Poll: page=%d off=%d stealth=%s form=%s cpage=%s bonusShown=%s bstate=%s",
-                        page, off, tostring(IsStealthed()), GetShapeshiftForm() or 0,
-                        tostring(CURRENT_ACTIONBAR_PAGE),
-                        tostring(bf and bf:IsShown()), bf and tostring(bf.state) or "?"))
-                    -- EXPERIMENT: the C-side keypress resolver appears to stay
-                    -- on the bonus page after the first unstealth (keys die
-                    -- while the Lua-side display flips back fine). On every
-                    -- unstealth transition (bonus offset 1->0) force the
-                    -- client's internal page back to 1. ChangeActionBarPage is
-                    -- not restricted, so this also works during combat.
+                    -- On unstealth (bonus offset 1->0):
+                    -- 1) This client shows BonusActionBarFrame on stealth but
+                    --    NEVER hides it on unstealth (the stock HideBonusActionBar
+                    --    slide path doesn't run), and its keypress resolver
+                    --    routes ACTIONBUTTON keys to the bonus bar while that
+                    --    frame is shown — so keys get stuck casting stealth
+                    --    slots. Force-hide it.
+                    -- 2) ChangeActionBarPage(1) here is what makes the
+                    --    in-combat unstealth display flip work (cpage stays 1
+                    --    and no event fires, but without it the bar froze on
+                    --    stealth skills when unstealthing during combat).
                     if off == 0 and prevOff and prevOff > 0 then
-                        -- EXPERIMENT: the client's C-side keypress resolver may
-                        -- route ACTIONBUTTON keys to the bonus bar while
-                        -- BonusActionBarFrame is shown and never switch back if
-                        -- it fails to hide. Force-hide it on unstealth.
                         local bf = BonusActionBarFrame
-                        if bf and bf:IsShown() then
-                            MobileUI_Debug("Flip: unstealth but BonusActionBarFrame STILL SHOWN — hiding")
-                            bf:Hide()
-                        end
-                        local ok, err = pcall(ChangeActionBarPage, 1)
-                        MobileUI_Debug("Flip: reset C-side page (unstealth): " .. tostring(ok)
-                            .. (err and (" " .. tostring(err)) or ""))
+                        if bf and bf:IsShown() then bf:Hide() end
+                        pcall(ChangeActionBarPage, 1)
                     end
                     MobileUILayout.ApplyFlip()
                 end
@@ -926,6 +913,13 @@ local function ApplyHideFrames()
                 local f = _G[name]
                 if f and f:IsShown() then f:Hide() end
             end
+            -- This client never hides BonusActionBarFrame after unstealth
+            -- (the C-side keypress router targets it while shown, sticking
+            -- keys on stealth slots). Keep it hidden whenever no bonus bar is
+            -- active; in stealth the offset is > 0 so the real stealth bar is
+            -- left alone.
+            local bf = BonusActionBarFrame
+            if bf and bf:IsShown() and (GetBonusBarOffset() or 0) == 0 then bf:Hide() end
             -- MultiBarBottomLeft: keep SHOWN (a hidden parent hides the
             -- scatter buttons). Never touch its points — the client marks the
             -- bar container as a protected frame.
