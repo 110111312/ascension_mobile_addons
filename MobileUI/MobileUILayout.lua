@@ -515,11 +515,11 @@ local function ApplyActionBar()
 end
 local function RevertActionBar()
     HOTKEY_FRAMES = {}  -- stop guard from hiding hotkeys/names
-    -- Clear the isBonus flip mirror so the stock bar is left exactly as the
-    -- client manages it (isBonus is a plain field — no pcall needed).
+    -- Clear the actionpage mirror so the stock bar is left exactly as the
+    -- client manages it (attribute channel; revert runs out of combat).
     for i = 1, 12 do
         local btn = _G["ActionButton" .. i]
-        if btn then btn.isBonus = nil end
+        if btn then pcall(function() btn:SetAttribute("actionpage", nil) end) end
     end
     for i = 1, 12 do
         local btn = _G["ActionButton" .. i]
@@ -586,13 +586,12 @@ end
 -- never recompute on their own, so display and click stay on page 1 while
 -- keypresses go elsewhere. Driven by a 0.25s state poll in guardFrame's
 -- OnUpdate (this client fires no page/shapeshift events), the follower
--- mirrors the client's choice by toggling the button's 'isBonus' flag — the
--- exact hook stock ActionButton_CalculateAction already uses to resolve
--- bonus-bar buttons — so display, click, and keypress all follow the same
--- slots. isBonus is a plain Lua field, so it (and the manual icon refresh
--- used in combat) work even under combat lockdown; the alternative hook
--- (the 'actionpage' attribute) is protected in combat and froze the flip
--- whenever stealth changed mid-fight.
+-- mirrors the client's choice via the 'actionpage' ATTRIBUTE — the secure
+-- channel for configuring secure buttons. Writing plain Lua fields on the
+-- buttons instead (isBonus, action) TAINTS them on this client: the next
+-- click through the secure path errors with "AddOn 'MobileUI' tainted the
+-- call of the secure function 'UseAction()'" and the cast is blocked.
+-- Attributes don't taint — the attribute-based flip was verified clean.
 local flipFrame
 
 -- The CLIENT owns the stance->bar mapping; we only mirror it. Generic rules
@@ -600,36 +599,31 @@ local flipFrame
 --   1. Stock 3.3.5a: entering a form flips GetActionBarPage() -> follow it.
 --   2. This client: entering stealth/stance shows the BONUS bar
 --      (GetBonusBarOffset() > 0) — the exact condition stock
---      BonusActionBarFrame uses to show itself. We mirror it by toggling
---      isBonus: stock ActionButton_CalculateAction resolves isBonus buttons
---      to NUM_ACTIONBAR_PAGES + GetBonusBarOffset() when the page is 1,
---      which is exactly the bonus page our flip needs.
-
--- Resolve the page the client would compute for this button right now
--- (mirrors ActionButton_CalculateAction for our buttons: no actionpage
--- attribute set, page pinned at 1, optional bonus-bar branch).
-local function ResolveActionPage(btn)
-    local page = GetActionBarPage() or 1
-    if btn.isBonus and page == 1 then
-        page = (NUM_ACTIONBAR_PAGES or 6) + (GetBonusBarOffset() or 0)
-    end
-    return page
-end
+--      BonusActionBarFrame uses to show itself. We mirror it via the
+--      actionpage attribute: stock ActionButton_CalculateAction resolves
+--      page from the button's actionpage attribute FIRST (falling back to
+--      GetActionBarPage), so setting it to NUM_ACTIONBAR_PAGES + offset
+--      (7) makes display, click, and keypress all follow the bonus slots.
 
 local function RefreshScatterButtons()
     if InCombatLockdown() then
         -- Manual refresh: the full ActionButton_UpdateAction path calls
         -- self:Show()/Hide() on the protected button (blocked in combat).
-        -- Icons are plain textures, so flip the display by setting the
-        -- icon directly. self.action is kept in sync for tooltips.
+        -- Icons are plain textures, so draw the icon directly. Resolve the
+        -- page EXACTLY as ActionButton_CalculateAction will at click time
+        -- (actionpage attribute first, then GetActionBarPage) so display
+        -- and click always agree — even if the attribute write was blocked
+        -- by lockdown. No field writes on the secure button (that taints).
         for i = 1, 12 do
             local btn = _G["ActionButton" .. i]
             if btn then
                 local id = btn:GetID()
                 if not id or id < 1 then id = i end
-                btn.action = id + (ResolveActionPage(btn) - 1) * (NUM_ACTIONBAR_BUTTONS or 12)
+                local attrPage = tonumber(SecureButton_GetModifiedAttribute(btn, "actionpage"))
+                local page = attrPage or (GetActionBarPage() or 1)
+                local action = id + (page - 1) * (NUM_ACTIONBAR_BUTTONS or 12)
                 local icon = _G[btn:GetName() .. "Icon"]
-                local tex = GetActionTexture(btn.action)
+                local tex = GetActionTexture(action)
                 if tex then
                     icon:SetTexture(tex)
                     icon:Show()
@@ -653,22 +647,36 @@ end
 
 function MobileUILayout.ApplyFlip()
     if not MobileDB or not MobileDB.layoutEnabled then return end
-    -- Mirror the client's bar choice. isBonus is a plain field — safe to
-    -- toggle in or out of combat, unlike the actionpage attribute.
-    local bonus = (GetActionBarPage() or 1) == 1 and (GetBonusBarOffset() or 0) > 0
+    -- Mirror the client's bar choice via the actionpage ATTRIBUTE (secure
+    -- channel — field writes taint on this client). SetAttribute may be
+    -- blocked during combat lockdown; if so the pcall catches it and the
+    -- flip applies when combat ends (the watcher re-runs on
+    -- PLAYER_REGEN_ENABLED, and the display mirrors the stale attr in the
+    -- meantime, so click and display stay consistent).
+    local page = GetActionBarPage() or 1
+    local fp = page
+    if page == 1 then
+        local off = GetBonusBarOffset() or 0
+        if off > 0 then fp = (NUM_ACTIONBAR_PAGES or 6) + off end
+    end
     for i = 1, 12 do
         local btn = _G["ActionButton" .. i]
-        if btn and btn.isBonus ~= bonus then
-            btn.isBonus = bonus
+        if btn then
+            local ok, err = pcall(function()
+                if fp > 1 then btn:SetAttribute("actionpage", fp)
+                else btn:SetAttribute("actionpage", nil) end
+            end)
+            if not ok then
+                MobileUI_Debug("Flip: attr blocked btn" .. i .. ": " .. tostring(err)) -- diagnostic
+            end
         end
     end
     RefreshScatterButtons()
-    -- Diagnostic: capture the resolved state so we can correlate with the
-    -- 'tainted the call of UseAction()' error (removed once diagnosed).
+    -- Diagnostic: capture the resolved state (removed once diagnosed).
     local b1 = _G["ActionButton1"]
-    MobileUI_Debug(string.format("Flip: page=%d off=%d bonus=%s b1.isBonus=%s b1.action=%s",
-        GetActionBarPage() or 1, GetBonusBarOffset() or 0, tostring(bonus),
-        b1 and tostring(b1.isBonus) or "?", b1 and tostring(b1.action) or "?"))
+    MobileUI_Debug(string.format("Flip: page=%d off=%d fp=%s b1.attrPage=%s",
+        page, GetBonusBarOffset() or 0, tostring(fp),
+        b1 and tostring(SecureButton_GetModifiedAttribute(b1, "actionpage")) or "?"))
 end
 
 function MobileUILayout.EnsureFlipWatcher()
