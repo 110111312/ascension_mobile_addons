@@ -15,15 +15,15 @@ local ACTION_BUTTONS = {
 -- Scatter spots fed from MultiBarBottomLeft (bottom-left bar; slots 61-65 on
 -- this Ascension client while the buttons stay attached to it).
 -- Artemis cannot create virtual keys for "-" and "=", so scatter spots 11/12
--- (where ActionButton11/12 would sit) are filled by bottom-left bar buttons 4
--- and 5, bound to T and F — the exact keys the Artemis preset sends at those
--- spots, so the icon matches the action. Q/E/R (bar buttons 1-3) keep 13-15.
+-- (where ActionButton11/12 would sit) are filled by bottom-left bar buttons.
+-- The five outermost spots (11-15) are fed by bar buttons 1-5 in order, so
+-- the arc reads left-to-right 1-2-3-4-5 (keybinds Q/E/R/T/F).
 local ACTION2_BUTTONS = {
-    { scatter = 11, src = 4 },  -- keybind T
-    { scatter = 12, src = 5 },  -- keybind F
-    { scatter = 13, src = 1 },  -- keybind Q
-    { scatter = 14, src = 2 },  -- keybind E
-    { scatter = 15, src = 3 },  -- keybind R
+    { scatter = 11, src = 1 },  -- keybind Q
+    { scatter = 12, src = 2 },  -- keybind E
+    { scatter = 13, src = 3 },  -- keybind R
+    { scatter = 14, src = 4 },  -- keybind T
+    { scatter = 15, src = 5 },  -- keybind F
 }
 local MICRO_BUTTONS = {
     "CharacterMicroButton", "SpellbookMicroButton", "TalentMicroButton",
@@ -446,7 +446,7 @@ local function ApplyActionBar()
     HOTKEY_FRAMES = {}  -- reset list
     -- Main bar buttons 1-10 (keys 1-0). ActionButton11/12 ("-" and "=") are
     -- intentionally NOT scattered: Artemis has no "-"/"=" virtual keys, so
-    -- those two spots are filled by bottom-left bar buttons 4/5 (T/F) below.
+    -- those two spots are filled by bottom-left bar buttons 1/2 below.
     for i = 1, 10 do
         local btn = _G["ActionButton" .. i]
         if btn then
@@ -481,10 +481,9 @@ local function ApplyActionBar()
     end
     -- Action bar 2 (MultiBarBottomLeft): scatter spots 11-15
     -- Spots 11/12 are NOT ActionButton11/12 ("-" and "="): Artemis has no
-    -- virtual keys for "-"/"=", so those spots are filled by bottom-left bar
-    -- buttons 4/5, bound to T and F — exactly the keys the Artemis preset
-    -- sends at those spots, so the icon matches the action. Q/E/R (bar buttons
-    -- 1-3) keep spots 13-15.
+    -- virtual keys for "-"/"=", so all five outermost spots are filled by
+    -- bottom-left bar buttons 1-5 in order (keybinds Q/E/R/T/F), making the
+    -- arc read 1-2-3-4-5 left to right.
     -- IMPORTANT: do NOT reparent these buttons. This Ascension client resolves
     -- a button's slot from the bar it is attached to (MultiBarBottomLeft =
     -- slots 61-65 here). Reparenting to UIParent makes them fall back to their
@@ -649,6 +648,22 @@ local function RefreshScatterButtons()
                 end
             end
         end
+        -- Diagnostic: which page-1 slots actually have content, and which
+        -- buttons drew an icon (the user sees only some buttons populated
+        -- after the in-combat flip — need to know if the slots are empty or
+        -- the draw is failing).
+        local drawn, slots = {}, {}
+        for i = 1, 10 do
+            if GetActionTexture(i) then slots[#slots + 1] = i end
+        end
+        for i = 1, 12 do
+            local btn = _G["ActionButton" .. i]
+            if btn then
+                local icon = _G[btn:GetName() .. "Icon"]
+                if icon and icon:IsShown() then drawn[#drawn + 1] = i end
+            end
+        end
+        MobileUI_Debug("Refresh: slotTex1_10={" .. table.concat(slots, ",") .. "} drawn={" .. table.concat(drawn, ",") .. "}")
     else
         for i = 1, 12 do
             local btn = _G["ActionButton" .. i]
@@ -706,6 +721,21 @@ for flipPage = 2, flipNumPages do
 end
 flipParts[#flipParts + 1] = "1"
 local FLIP_DRIVER_COND = table.concat(flipParts, "; ")
+
+-- Diagnostic: map every action-bar page's slots to see where the user's
+-- skills actually live (page 1 = main bar, page 6 = bar 6, page 7 = bonus).
+local function SlotDump(label)
+    local parts = {}
+    for p = 1, 7 do
+        local row = {}
+        for s = 1, 12 do
+            local a = (p - 1) * 12 + s
+            row[#row + 1] = GetActionTexture(a) and "X" or "."
+        end
+        parts[#parts + 1] = p .. ":" .. table.concat(row)
+    end
+    MobileUI_Debug("Slots " .. label .. ": " .. table.concat(parts, " | "))
+end
 
 function MobileUILayout.InstallFlipBridge()
     for i = 1, 10 do
@@ -938,7 +968,7 @@ end
 -- Hide the bottom-left bar's non-scatter buttons (6-12). The bar is horizontal
 -- and its buttons are anchor-chained (each LEFT of the previous button's
 -- RIGHT), so buttons 6-12 chain off the last scatter button
--- (MultiBarBottomLeftButton5 at scatter spot 12) and would render on screen
+-- (MultiBarBottomLeftButton5 at scatter spot 15) and would render on screen
 -- next to the arc. Hiding them individually is safe: they stay attached to the
 -- bar, so slot resolution for the scatter buttons is unaffected.
 local function HideBar2Tail()
@@ -1018,6 +1048,7 @@ local function ApplyHideFrames()
                         if bf and shown == 1 then bf:Hide() end
                         local ok = pcall(ChangeActionBarPage, 1)
                         MobileUI_Debug(string.format("Flip unstealth: bonusShown=%d changePage=%s", shown, tostring(ok)))
+                        SlotDump("after-unstealth")
                     end
                     MobileUILayout.ApplyFlip()
                 end
