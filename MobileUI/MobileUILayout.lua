@@ -80,6 +80,13 @@ local saved = {}
 local menuBar, bagButton, combatFrame, guardFrame, pendingAction
 local HOTKEY_FRAMES = {}  -- populated in ApplyActionBar, hidden by guard OnUpdate
 
+-- No tooltip over the thumb-zone action buttons: GameTooltip would cover the
+-- scatter arc. Installed as OnEnter while the layout is active; the original
+-- OnEnter is saved in SaveOriginals and restored on revert (layout toggle).
+local function NoActionTooltipOnEnter()
+    if GameTooltip then GameTooltip:Hide() end
+end
+
 -- Helpers
 local function SavePoints(frame)
     local pts = {}
@@ -168,6 +175,7 @@ local function SaveOriginals()
                 nameShown = nm and nm:IsShown() or false,
                 normalTex = nt and nt:GetTexture(),
                 pushedTex = pt and pt:GetTexture(),
+                onEnter = btn:GetScript("OnEnter"),
             }
         end
     end
@@ -187,6 +195,7 @@ local function SaveOriginals()
                 nameShown = nm and nm:IsShown() or false,
                 normalTex = nt and nt:GetTexture(),
                 pushedTex = pt and pt:GetTexture(),
+                onEnter = btn:GetScript("OnEnter"),
             }
         end
     end
@@ -224,15 +233,15 @@ local function SaveOriginals()
     -- ChatFrame1: original position, so layout revert restores it exactly
     local cf = _G["ChatFrame1"]
     if cf then saved.chatFrame = { points = SavePoints(cf) } end
-    -- Save shown state of the bottom-left bar's tail buttons (6-12). The bar
-    -- is horizontal and its buttons are anchor-chained (each LEFT of the
-    -- previous button's RIGHT), so buttons 6-12 chain off the last scatter
-    -- button and would render on screen; the layout hides them, revert
-    -- restores them.
+    -- Save shown state + anchor points of the bottom-left bar's tail buttons
+    -- (6-12). The bar is horizontal and its buttons are anchor-chained (each
+    -- LEFT of the previous button's RIGHT), so buttons 6-12 chain off the
+    -- last scatter button and would render on screen; the layout hides them
+    -- and parks them off-screen (combat re-show), revert restores both.
     saved.bar2tail = {}
     for i = 6, 12 do
         local b = _G["MultiBarBottomLeftButton" .. i]
-        if b then saved.bar2tail[i] = b:IsShown() end
+        if b then saved.bar2tail[i] = { shown = b:IsShown(), points = SavePoints(b) } end
     end
 end
 
@@ -464,6 +473,7 @@ local function ApplyActionBar()
             if nm then nm:Hide() end
             if hotkey then HOTKEY_FRAMES[#HOTKEY_FRAMES+1] = hotkey end
             if nm then HOTKEY_FRAMES[#HOTKEY_FRAMES+1] = nm end
+            btn:SetScript("OnEnter", NoActionTooltipOnEnter)
             MobileUI_Debug("  ActionButton" .. i .. " skinned")
         else
             MobileUI_Debug("  ActionButton" .. i .. " NOT FOUND")
@@ -505,6 +515,7 @@ local function ApplyActionBar()
             if nm then nm:Hide() end
             if hotkey then HOTKEY_FRAMES[#HOTKEY_FRAMES+1] = hotkey end
             if nm then HOTKEY_FRAMES[#HOTKEY_FRAMES+1] = nm end
+            btn:SetScript("OnEnter", NoActionTooltipOnEnter)
             MobileUI_Debug("  MultiBarBottomLeftButton" .. src .. " (as btn" .. i .. ") skinned")
         else
             MobileUI_Debug("  MultiBarBottomLeftButton" .. src .. " NOT FOUND")
@@ -545,6 +556,7 @@ local function RevertActionBar()
             if hotkey and sv.hotkeyShown then hotkey:Show() end
             local nm = _G["ActionButton" .. i .. "Name"]
             if nm and sv.nameShown then nm:Show() end
+            btn:SetScript("OnEnter", sv.onEnter)
         end
     end
     -- Revert MultiBarBottomLeft buttons (spots 11-15)
@@ -573,6 +585,7 @@ local function RevertActionBar()
             if hotkey and sv.hotkeyShown then hotkey:Show() end
             local nm = _G["MultiBarBottomLeftButton" .. src .. "Name"]
             if nm and sv.nameShown then nm:Show() end
+            btn:SetScript("OnEnter", sv.onEnter)
         end
     end
 end
@@ -659,6 +672,8 @@ function MobileUILayout.ApplyFlip()
         local off = GetBonusBarOffset() or 0
         if off > 0 then fp = (NUM_ACTIONBAR_PAGES or 6) + off end
     end
+    MobileUI_Debug(string.format("Flip: page=%d off=%d fp=%d combat=%d",
+        page, GetBonusBarOffset() or 0, fp, InCombatLockdown() and 1 or 0))
     for i = 1, 12 do
         local btn = _G["ActionButton" .. i]
         if btn then
@@ -677,6 +692,10 @@ function MobileUILayout.ApplyFlip()
         end
     end
     RefreshScatterButtons()
+    local b1 = _G["ActionButton1"]
+    if b1 then
+        MobileUI_Debug("Flip: attr1=" .. tostring(SecureButton_GetModifiedAttribute(b1, "actionpage")))
+    end
 end
 
 function MobileUILayout.EnsureFlipWatcher()
@@ -687,10 +706,14 @@ function MobileUILayout.EnsureFlipWatcher()
     flipFrame:RegisterEvent("UPDATE_STEALTH")
     flipFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
     flipFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    flipFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
     flipFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-    flipFrame:SetScript("OnEvent", function()
+    flipFrame:SetScript("OnEvent", function(self, event, ...)
         -- Combat-safe: ApplyFlip only sets attributes (secure channel) and
         -- draws icon textures.
+        MobileUI_Debug(string.format("Flip evt: %s off=%d page=%d combat=%d",
+            event, GetBonusBarOffset() or 0, GetActionBarPage() or 1,
+            InCombatLockdown() and 1 or 0))
         MobileUILayout.ApplyFlip()
     end)
 end
@@ -855,6 +878,24 @@ local function HideBar2Tail()
         if b and b:IsShown() then b:Hide() end
     end
 end
+-- Park the tail buttons far off-screen. Hide() alone is not combat-proof: the
+-- client re-shows the bar's buttons when combat starts, and the guard frame
+-- pauses its per-frame HideBar2Tail() during combat lockdown (Show/Hide on
+-- protected frames in combat taints them and breaks the next UseAction click).
+-- Re-shows never re-anchor, so a one-shot off-screen reposition at apply time
+-- (always out of combat) makes the combat re-show render invisibly — with no
+-- per-frame protected-frame calls during the fight. Each button gets its own
+-- independent anchor (don't rely on the chain dragging 7-12 after 6), and all
+-- stay children of MultiBarBottomLeft, so slot resolution (61-72) is untouched.
+local function ParkBar2Tail()
+    for i = 6, 12 do
+        local b = _G["MultiBarBottomLeftButton" .. i]
+        if b then
+            b:ClearAllPoints()
+            b:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", -3000, -3000)
+        end
+    end
+end
 local function ApplyHideFrames()
     for _, name in ipairs(HIDE_FRAMES) do
         local f = _G[name]
@@ -862,6 +903,7 @@ local function ApplyHideFrames()
     end
     EnsureBarShown()
     HideBar2Tail()
+    ParkBar2Tail()
     if not guardFrame then
         guardFrame = CreateFrame("Frame")
         guardFrame:SetScript("OnUpdate", function(self, elapsed)
@@ -881,6 +923,9 @@ local function ApplyHideFrames()
                     local prevOff = self._flipOff
                     self._flipState = state
                     self._flipOff = off
+                    MobileUI_Debug(string.format("Flip poll: %s->%s combat=%d",
+                        self._prevState or "?", state, InCombatLockdown() and 1 or 0))
+                    self._prevState = state
                     -- On unstealth (bonus offset 1->0):
                     -- 1) This client shows BonusActionBarFrame on stealth but
                     --    NEVER hides it on unstealth (the stock HideBonusActionBar
@@ -894,32 +939,38 @@ local function ApplyHideFrames()
                     --    stealth skills when unstealthing during combat).
                     if off == 0 and prevOff and prevOff > 0 then
                         local bf = BonusActionBarFrame
-                        if bf and bf:IsShown() then bf:Hide() end
-                        pcall(ChangeActionBarPage, 1)
+                        local shown = bf and bf:IsShown() and 1 or 0
+                        if bf and shown == 1 then bf:Hide() end
+                        local ok = pcall(ChangeActionBarPage, 1)
+                        MobileUI_Debug(string.format("Flip unstealth: bonusShown=%d changePage=%s", shown, tostring(ok)))
                     end
                     MobileUILayout.ApplyFlip()
                 end
             end
+            -- This client never hides BonusActionBarFrame after unstealth
+            -- (the C-side keypress router targets it while shown, sticking
+            -- keys on stealth slots). Keep it hidden whenever no bonus bar is
+            -- active; in stealth the offset is > 0 so the real stealth bar is
+            -- left alone. BonusActionBarFrame is NOT a protected frame, so
+            -- hiding it is taint-safe even during combat lockdown — the
+            -- client re-shows bars at combat transitions, and if it re-shows
+            -- the bonus bar mid-combat after an unstealth, keys stay stuck on
+            -- stealth slots for the whole fight.
+            local bf = BonusActionBarFrame
+            if bf and bf:IsShown() and (GetBonusBarOffset() or 0) == 0 then bf:Hide() end
             -- Everything below Show()/Hide()s PROTECTED frames (the stock
             -- bars and bar buttons). During combat lockdown those calls are
             -- blocked and TAINT the frames — which then surfaces as
             -- "MobileUI tainted the call of the secure function
             -- 'UseAction()'" on the next button click. Pause that
             -- enforcement during combat; the stock bar briefly showing is
-            -- cosmetic, and full enforcement resumes the frame combat ends.
+            -- cosmetic, and full enforcement resumes when combat ends.
             -- (The flip poll above is pure Lua and stays active in combat.)
             if InCombatLockdown() then return end
             for _, name in ipairs(HIDE_FRAMES) do
                 local f = _G[name]
                 if f and f:IsShown() then f:Hide() end
             end
-            -- This client never hides BonusActionBarFrame after unstealth
-            -- (the C-side keypress router targets it while shown, sticking
-            -- keys on stealth slots). Keep it hidden whenever no bonus bar is
-            -- active; in stealth the offset is > 0 so the real stealth bar is
-            -- left alone.
-            local bf = BonusActionBarFrame
-            if bf and bf:IsShown() and (GetBonusBarOffset() or 0) == 0 then bf:Hide() end
             -- MultiBarBottomLeft: keep SHOWN (a hidden parent hides the
             -- scatter buttons). Never touch its points — the client marks the
             -- bar container as a protected frame.
@@ -938,10 +989,14 @@ local function ApplyHideFrames()
 end
 local function RevertHideFrames()
     if guardFrame then guardFrame:Hide() end
-    -- Restore bottom-left bar tail buttons that were visible before the layout
+    -- Restore the bottom-left bar's tail buttons (6-12): un-park them (back on
+    -- the anchor chain) and restore their original shown state.
     for i = 6, 12 do
-        local b, shown = _G["MultiBarBottomLeftButton" .. i], saved.bar2tail and saved.bar2tail[i]
-        if b and shown then b:Show() end
+        local b, sv = _G["MultiBarBottomLeftButton" .. i], saved.bar2tail and saved.bar2tail[i]
+        if b and sv then
+            if sv.points then RestorePoints(b, sv.points) end
+            if sv.shown then b:Show() else b:Hide() end
+        end
     end
     for _, name in ipairs(HIDE_FRAMES) do
         local f, sv = _G[name], saved.hides and saved.hides[name]
