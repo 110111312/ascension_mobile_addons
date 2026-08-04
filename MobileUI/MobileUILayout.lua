@@ -603,11 +603,19 @@ end
 -- keypresses go elsewhere. Driven by a 0.25s state poll in guardFrame's
 -- OnUpdate (this client fires no page/shapeshift events), the follower
 -- mirrors the client's choice via the 'actionpage' ATTRIBUTE — the secure
--- channel for configuring secure buttons. Writing plain Lua fields on the
--- buttons instead (isBonus, action) TAINTS them on this client: the next
--- click through the secure path errors with "AddOn 'MobileUI' tainted the
--- call of the secure function 'UseAction()'" and the cast is blocked.
--- Attributes don't taint — the attribute-based flip was verified clean.
+-- channel for configuring secure buttons.
+-- TAINT RULES (learned the hard way):
+--   * Writing plain Lua fields that ActionButton_CalculateAction READS
+--     (e.g. isBonus) taints the secure click chain: the next click errors
+--     "AddOn 'MobileUI' tainted the call of the secure function
+--     'UseAction()'" and the cast is blocked. Attributes don't taint.
+--   * Writing self.action (the button's DISPLAY cache) is SAFE: it is not
+--     read by CalculateAction or any secure path, so the click chain is
+--     untouched. In fact it is REQUIRED mid-combat: the client re-renders
+--     from self.action on UPDATE_SHAPESHIFT_FORM, and since our own
+--     SetAttribute is silently blocked during combat lockdown, the stale
+--     page-7 cache makes the client re-draw the stealth bar (grayed — the
+--     stale actions are unusable) over our icon draws.
 local flipFrame
 
 -- The CLIENT owns the stance->bar mapping; we only mirror it. Generic rules
@@ -640,6 +648,14 @@ local function RefreshScatterButtons()
                 local action = id + (page - 1) * (NUM_ACTIONBAR_BUTTONS or 12)
                 local icon = _G[btn:GetName() .. "Icon"]
                 local tex = GetActionTexture(action)
+                -- Write the button's DISPLAY cache so the client's own
+                -- re-renders (ActionButton_Update on UPDATE_SHAPESHIFT_FORM
+                -- etc.) draw the same content we do instead of reverting to
+                -- the stale page-7 actions. Safe: CalculateAction computes
+                -- fresh from the actionpage attribute and never reads
+                -- self.action, so the secure click chain is untouched (only
+                -- fields CalculateAction READS, like isBonus, taint).
+                btn.action = action
                 if tex then
                     icon:SetTexture(tex)
                     icon:Show()
