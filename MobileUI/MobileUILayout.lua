@@ -522,6 +522,7 @@ local function ApplyActionBar()
         end
     end
     MobileUILayout.EnsureFlipWatcher()
+    MobileUILayout.InstallFlipBridge()
     MobileUILayout.ApplyFlip()
 end
 local function RevertActionBar()
@@ -588,6 +589,9 @@ local function RevertActionBar()
             btn:SetScript("OnEnter", sv.onEnter)
         end
     end
+    -- Drop the SecureStateDriver bridge (the buttons were reparented back
+    -- to their stock parents above, so the handler frames are childless).
+    MobileUILayout.UninstallFlipBridge()
 end
 
 -- 4b. Stance/stealth flip follower — mirror the bar the client targets
@@ -658,14 +662,96 @@ local function RefreshScatterButtons()
     end
 end
 
+-- ---- SecureStateDriver bridge (combat-safe attribute writes) ----
+-- Our own SetAttribute("actionpage", N) on the ActionButtons is SILENTLY
+-- blocked during combat lockdown on this client (verified via readback:
+-- after ApplyFlip writes 1 mid-combat, the attribute still reads 7; pcall
+-- can't catch it because secure-call blocking is not a Lua error). The one
+-- stock mechanism that CAN write attributes on protected frames during
+-- combat is the SecureStateDriver manager (a secure frame). But the driver
+-- manages 'state-<name>' attributes, which ActionButton_CalculateAction
+-- does NOT read (it reads plain 'actionpage' via the useparent walk). So:
+--   - each scattered ActionButton1-10 is reparented under a tiny
+--     SecureHandlerStateTemplate frame (ours, created out of combat);
+--   - RegisterStateDriver(handler, "actionpage", COND) makes the manager
+--     re-evaluate COND every 0.2s (and immediately on bonus/stealth/page
+--     events) and securely SetAttribute 'state-actionpage' on the handler
+--     — even during combat lockdown;
+--   - the handler's template-wired _onstate-actionpage snippet copies
+--     'state-actionpage' -> 'actionpage' on the handler (restricted
+--     closure: it runs in a secure context, so its SetAttribute is allowed
+--     in combat too);
+--   - the button's stock useparent-actionpage=true walk then reads the
+--     handler's 'actionpage' -> CalculateAction, clicks, and our refresh
+--     all resolve the same page, in and out of combat.
+-- COND mirrors the client generically: [bonusbar:N] -> page 6+N (this
+-- client's stealth/stance bonus bar), [bar:N] -> N (stock page flips),
+-- else an explicit 1 (never nil — a nil-clear left the client's C-side
+-- keypress resolver stuck on the bonus page after unstealth).
+local flipHandlers = {}
+local FLIP_HANDLER_SNIPPET = [[
+    if newstate then
+        self:SetAttribute("actionpage", newstate)
+    else
+        self:SetAttribute("actionpage", 1)
+    end
+]]
+local flipNumPages = NUM_ACTIONBAR_PAGES or 6
+local flipParts = {}
+for flipOff = 1, 5 do
+    flipParts[#flipParts + 1] = string.format("[bonusbar:%d] %d", flipOff, flipNumPages + flipOff)
+end
+for flipPage = 2, flipNumPages do
+    flipParts[#flipParts + 1] = string.format("[bar:%d] %d", flipPage, flipPage)
+end
+flipParts[#flipParts + 1] = "1"
+local FLIP_DRIVER_COND = table.concat(flipParts, "; ")
+
+function MobileUILayout.InstallFlipBridge()
+    for i = 1, 10 do
+        local btn = _G["ActionButton" .. i]
+        if btn and not flipHandlers[i] then
+            local h = CreateFrame("Frame", nil, UIParent, "SecureHandlerStateTemplate")
+            h:SetSize(1, 1)
+            h:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
+            h:Show()
+            local ok, err = pcall(function()
+                h:SetAttribute("_onstate-actionpage", FLIP_HANDLER_SNIPPET)
+                RegisterStateDriver(h, "actionpage", FLIP_DRIVER_COND)
+            end)
+            if ok then
+                btn:SetParent(h)
+                flipHandlers[i] = h
+            else
+                MobileUI_Debug("Flip: bridge install failed for ActionButton" .. i .. ": " .. tostring(err))
+                h:Hide()
+            end
+        end
+    end
+end
+
+function MobileUILayout.UninstallFlipBridge()
+    for i = 1, 10 do
+        local h = flipHandlers[i]
+        if h then
+            UnregisterStateDriver(h, "actionpage")
+            h:Hide()
+            flipHandlers[i] = nil
+        end
+    end
+end
+
 function MobileUILayout.ApplyFlip()
     if not MobileDB or not MobileDB.layoutEnabled then return end
-    -- Mirror the client's bar choice via the actionpage ATTRIBUTE (secure
-    -- channel — field writes taint on this client). SetAttribute works even
-    -- during combat lockdown on this client (verified via diagnostics), so
-    -- the flip applies immediately on every state change; the pcall below
-    -- is belt-and-braces. Display, click, and keypress all resolve through
-    -- the same attribute, so they always agree.
+    -- The actionpage ATTRIBUTE is now owned by the SecureStateDriver bridge
+    -- above (InstallFlipBridge): the driver's manager is a secure frame, so
+    -- it can SetAttribute during combat lockdown — our own writes cannot
+    -- (verified: SetAttribute on ActionButtons is SILENTLY blocked
+    -- mid-combat on this client; pcall can't catch it because blocking
+    -- isn't a Lua error). Display, click, and keypress all resolve through
+    -- the same attribute, so they always agree, in and out of combat.
+    -- ApplyFlip only mirrors the client's side-effects and re-draws the
+    -- buttons to follow the attribute.
     local page = GetActionBarPage() or 1
     local fp = page
     if page == 1 then
@@ -674,23 +760,6 @@ function MobileUILayout.ApplyFlip()
     end
     MobileUI_Debug(string.format("Flip: page=%d off=%d fp=%d combat=%d",
         page, GetBonusBarOffset() or 0, fp, InCombatLockdown() and 1 or 0))
-    for i = 1, 12 do
-        local btn = _G["ActionButton" .. i]
-        if btn then
-            local ok, err = pcall(function()
-                -- Use an explicit 1 (not nil): the client's C-side keypress
-                -- resolver appears to cache the actionpage attribute, and a
-                -- nil-clear leaves it stuck on the bonus page after unstealth
-                -- (keys then cast the stealth bar's slots). A numeric write
-                -- propagates; display is identical (page 1 either way).
-                if fp > 1 then btn:SetAttribute("actionpage", fp)
-                else btn:SetAttribute("actionpage", 1) end
-            end)
-            if not ok then
-                MobileUI_Debug("Flip: ActionButton" .. i .. " attr failed: " .. tostring(err))
-            end
-        end
-    end
     RefreshScatterButtons()
     local b1 = _G["ActionButton1"]
     if b1 then
@@ -918,7 +987,13 @@ local function ApplyHideFrames()
                 self._t = 0
                 local page = GetActionBarPage() or 1
                 local off = GetBonusBarOffset() or 0
-                local state = string.format("%d|%d", page, off)
+                -- Include the resolved actionpage attribute: the bridge
+                -- updates it asynchronously (driver 0.2s throttle / event
+                -- re-eval), so re-run ApplyFlip when IT changes too, not
+                -- just when page/off move.
+                local b1 = _G["ActionButton1"]
+                local a1 = b1 and SecureButton_GetModifiedAttribute(b1, "actionpage") or "?"
+                local state = string.format("%d|%d|%s", page, off, tostring(a1))
                 if state ~= self._flipState then
                     local prevOff = self._flipOff
                     self._flipState = state
