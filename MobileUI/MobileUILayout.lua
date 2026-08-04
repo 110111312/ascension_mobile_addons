@@ -473,6 +473,13 @@ local function ApplyActionBar()
             if nm then nm:Hide() end
             if hotkey then HOTKEY_FRAMES[#HOTKEY_FRAMES+1] = hotkey end
             if nm then HOTKEY_FRAMES[#HOTKEY_FRAMES+1] = nm end
+            -- showgrid=1: the client's ActionButton_Update hides a button
+            -- whose cached action is empty (self:Hide() when showgrid==0).
+            -- Mid-combat that would hide scatter buttons (stale page-7
+            -- actions) and we can't Show them back (protected). With
+            -- showgrid=1 the Update hides the cooldown region instead, so
+            -- the button stays visible for our per-frame redraw.
+            pcall(function() btn:SetAttribute("showgrid", 1) end)
             btn:SetScript("OnEnter", NoActionTooltipOnEnter)
             MobileUI_Debug("  ActionButton" .. i .. " skinned")
         else
@@ -609,13 +616,16 @@ end
 --     (e.g. isBonus) taints the secure click chain: the next click errors
 --     "AddOn 'MobileUI' tainted the call of the secure function
 --     'UseAction()'" and the cast is blocked. Attributes don't taint.
---   * Writing self.action (the button's DISPLAY cache) is SAFE: it is not
---     read by CalculateAction or any secure path, so the click chain is
---     untouched. In fact it is REQUIRED mid-combat: the client re-renders
---     from self.action on UPDATE_SHAPESHIFT_FORM, and since our own
---     SetAttribute is silently blocked during combat lockdown, the stale
---     page-7 cache makes the client re-draw the stealth bar (grayed — the
---     stale actions are unusable) over our icon draws.
+--   * On THIS client ANY direct field write on the secure buttons taints
+--     — even self.action, which CalculateAction never reads: after the
+--     write, the client's own later SetAttribute on the button errors
+--     "prevented the call of the secure function 'ActionButtonN:SetAttribute()'"
+--     and its page management breaks. So the display must be owned via
+--     non-protected regions only (icon/cooldown textures, vertex color)
+--     and the client must be prevented from hiding/re-rendering the
+--     buttons from their stale self.action: showgrid=1 makes its Update
+--     hide the cooldown region instead of the button, and a per-frame
+--     combat re-assert redraws icon/color/cooldown from the attr page.
 local flipFrame
 
 -- The CLIENT owns the stance->bar mapping; we only mirror it. Generic rules
@@ -648,14 +658,6 @@ local function RefreshScatterButtons()
                 local action = id + (page - 1) * (NUM_ACTIONBAR_BUTTONS or 12)
                 local icon = _G[btn:GetName() .. "Icon"]
                 local tex = GetActionTexture(action)
-                -- Write the button's DISPLAY cache so the client's own
-                -- re-renders (ActionButton_Update on UPDATE_SHAPESHIFT_FORM
-                -- etc.) draw the same content we do instead of reverting to
-                -- the stale page-7 actions. Safe: CalculateAction computes
-                -- fresh from the actionpage attribute and never reads
-                -- self.action, so the secure click chain is untouched (only
-                -- fields CalculateAction READS, like isBonus, taint).
-                btn.action = action
                 if tex then
                     icon:SetTexture(tex)
                     icon:Show()
@@ -814,6 +816,51 @@ function MobileUILayout.UninstallFlipBridge()
             UnregisterStateDriver(h, "actionpage")
             h:Hide()
             flipHandlers[i] = nil
+        end
+    end
+end
+
+-- Per-frame combat display ownership. The client re-renders the buttons
+-- from their stale self.action on UPDATE_SHAPESHIFT_FORM etc. (it cannot
+-- be corrected without tainting field writes), so in combat we re-assert
+-- the visible state every frame from the attr-resolved page: icon texture,
+-- white vertex color (overrides the client's stale-action graying), and
+-- cooldown. All targets are plain texture/cooldown regions — not protected
+-- — so no taint, no field writes on the buttons. With showgrid=1 the
+-- client's Update never hides the buttons themselves (it hides the
+-- cooldown region instead), so they stay visible for this redraw.
+local function RefreshScatterCombat()
+    for i = 1, 10 do
+        local btn = _G["ActionButton" .. i]
+        if btn then
+            local id = btn:GetID()
+            if not id or id < 1 then id = i end
+            local attrPage = tonumber(SecureButton_GetModifiedAttribute(btn, "actionpage"))
+            local page = attrPage or (GetActionBarPage() or 1)
+            local action = id + (page - 1) * (NUM_ACTIONBAR_BUTTONS or 12)
+            local icon = _G[btn:GetName() .. "Icon"]
+            local tex = GetActionTexture(action)
+            if tex then
+                icon:SetTexture(tex)
+                icon:Show()
+                icon:SetVertexColor(1, 1, 1)
+            else
+                icon:Hide()
+            end
+            local cd = _G[btn:GetName() .. "Cooldown"]
+            if cd then
+                local start, duration = GetActionCooldown(action)
+                if start and duration and duration > 0 then
+                    if cd.start ~= start or cd.duration ~= duration then
+                        cd:SetCooldown(start, duration)
+                        cd.start, cd.duration = start, duration
+                    end
+                    if not cd:IsShown() then cd:Show() end
+                else
+                    cd:Hide()
+                    cd.start, cd.duration = nil, nil
+                end
+            end
         end
     end
 end
@@ -1113,15 +1160,22 @@ local function ApplyHideFrames()
             -- stealth slots for the whole fight.
             local bf = BonusActionBarFrame
             if bf and bf:IsShown() and (GetBonusBarOffset() or 0) == 0 then bf:Hide() end
-            -- Everything below Show()/Hide()s PROTECTED frames (the stock
-            -- bars and bar buttons). During combat lockdown those calls are
-            -- blocked and TAINT the frames — which then surfaces as
-            -- "MobileUI tainted the call of the secure function
-            -- 'UseAction()'" on the next button click. Pause that
-            -- enforcement during combat; the stock bar briefly showing is
-            -- cosmetic, and full enforcement resumes when combat ends.
-            -- (The flip poll above is pure Lua and stays active in combat.)
-            if InCombatLockdown() then return end
+            -- Combat: own the scatter display every frame. The client
+            -- re-renders these buttons from their stale self.action (can't
+            -- be fixed — field writes taint), so redraw icon/color/cooldown
+            -- from the attr-resolved page here. Everything below this line
+            -- Show()/Hide()s PROTECTED frames (the stock bars and bar
+            -- buttons): during combat lockdown those calls are blocked and
+            -- TAINT the frames — which then surfaces as "MobileUI tainted
+            -- the call of the secure function 'UseAction()'" on the next
+            -- button click. Pause that enforcement during combat; the stock
+            -- bar briefly showing is cosmetic, and full enforcement resumes
+            -- when combat ends. (The flip poll above is pure Lua and stays
+            -- active in combat.)
+            if InCombatLockdown() then
+                RefreshScatterCombat()
+                return
+            end
             for _, name in ipairs(HIDE_FRAMES) do
                 local f = _G[name]
                 if f and f:IsShown() then f:Hide() end
