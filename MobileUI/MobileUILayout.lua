@@ -664,6 +664,7 @@ local function RefreshScatterButtons()
             end
         end
         MobileUI_Debug("Refresh: slotTex1_10={" .. table.concat(slots, ",") .. "} drawn={" .. table.concat(drawn, ",") .. "}")
+        ButtonStateDump("at-refresh")
     else
         for i = 1, 12 do
             local btn = _G["ActionButton" .. i]
@@ -735,6 +736,36 @@ local function SlotDump(label)
         parts[#parts + 1] = p .. ":" .. table.concat(row)
     end
     MobileUI_Debug("Slots " .. label .. ": " .. table.concat(parts, " | "))
+end
+
+-- Diagnostic: per-button visible state — the icon's ACTUAL texture path and
+-- the button's cached self.action (read-only; we never write fields on
+-- secure buttons). Comparing a dump right after our refresh with one ~1s
+-- later shows whether the client re-updates the buttons from stale
+-- self.action (page-7 values) and overwrites our page-1 icon draws.
+local function ButtonStateDump(label)
+    local parts = {}
+    for i = 1, 10 do
+        local btn = _G["ActionButton" .. i]
+        if btn then
+            local icon = _G[btn:GetName() .. "Icon"]
+            local tex = icon and icon:GetTexture() or "?"
+            parts[#parts + 1] = i .. ":act=" .. tostring(btn.action) .. ":tex=" .. tostring(tex)
+        end
+    end
+    MobileUI_Debug("Btns " .. label .. ": " .. table.concat(parts, " "))
+end
+
+local function DelayedDump(seconds, label)
+    local f = CreateFrame("Frame")
+    local t = 0
+    f:SetScript("OnUpdate", function(self, el)
+        t = t + el
+        if t >= seconds then
+            ButtonStateDump(label)
+            self:SetScript("OnUpdate", nil)
+        end
+    end)
 end
 
 function MobileUILayout.InstallFlipBridge()
@@ -1049,6 +1080,8 @@ local function ApplyHideFrames()
                         local ok = pcall(ChangeActionBarPage, 1)
                         MobileUI_Debug(string.format("Flip unstealth: bonusShown=%d changePage=%s", shown, tostring(ok)))
                         SlotDump("after-unstealth")
+                        ButtonStateDump("unstealth")
+                        DelayedDump(1.0, "unstealth+1s")
                     end
                     MobileUILayout.ApplyFlip()
                 end
