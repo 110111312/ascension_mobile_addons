@@ -639,6 +639,51 @@ local flipFrame
 --      GetActionBarPage), so setting it to NUM_ACTIONBAR_PAGES + offset
 --      (7) makes display, click, and keypress all follow the bonus slots.
 
+-- Diagnostic: map every action-bar page's slots to see where the user's
+-- skills actually live (page 1 = main bar, page 6 = bar 6, page 7 = bonus).
+local function SlotDump(label)
+    local parts = {}
+    for p = 1, 7 do
+        local row = {}
+        for s = 1, 12 do
+            local a = (p - 1) * 12 + s
+            row[#row + 1] = GetActionTexture(a) and "X" or "."
+        end
+        parts[#parts + 1] = p .. ":" .. table.concat(row)
+    end
+    MobileUI_Debug("Slots " .. label .. ": " .. table.concat(parts, " | "))
+end
+
+-- Diagnostic: per-button visible state — the icon's ACTUAL texture path and
+-- the button's cached self.action (read-only; we never write fields on
+-- secure buttons). Comparing a dump right after our refresh with one ~1s
+-- later shows whether the client re-updates the buttons from stale
+-- self.action (page-7 values) and overwrites our page-1 icon draws.
+local function ButtonStateDump(label)
+    local parts = {}
+    for i = 1, 10 do
+        local btn = _G["ActionButton" .. i]
+        if btn then
+            local icon = _G[btn:GetName() .. "Icon"]
+            local tex = icon and icon:GetTexture() or "?"
+            parts[#parts + 1] = i .. ":act=" .. tostring(btn.action) .. ":tex=" .. tostring(tex)
+        end
+    end
+    MobileUI_Debug("Btns " .. label .. ": " .. table.concat(parts, " "))
+end
+
+local function DelayedDump(seconds, label)
+    local f = CreateFrame("Frame")
+    local t = 0
+    f:SetScript("OnUpdate", function(self, el)
+        t = t + el
+        if t >= seconds then
+            ButtonStateDump(label)
+            self:SetScript("OnUpdate", nil)
+        end
+    end)
+end
+
 local function RefreshScatterButtons()
     if InCombatLockdown() then
         -- Manual refresh: the full ActionButton_UpdateAction path calls
@@ -741,51 +786,6 @@ end
 flipParts[#flipParts + 1] = "1"
 local FLIP_DRIVER_COND = table.concat(flipParts, "; ")
 
--- Diagnostic: map every action-bar page's slots to see where the user's
--- skills actually live (page 1 = main bar, page 6 = bar 6, page 7 = bonus).
-local function SlotDump(label)
-    local parts = {}
-    for p = 1, 7 do
-        local row = {}
-        for s = 1, 12 do
-            local a = (p - 1) * 12 + s
-            row[#row + 1] = GetActionTexture(a) and "X" or "."
-        end
-        parts[#parts + 1] = p .. ":" .. table.concat(row)
-    end
-    MobileUI_Debug("Slots " .. label .. ": " .. table.concat(parts, " | "))
-end
-
--- Diagnostic: per-button visible state — the icon's ACTUAL texture path and
--- the button's cached self.action (read-only; we never write fields on
--- secure buttons). Comparing a dump right after our refresh with one ~1s
--- later shows whether the client re-updates the buttons from stale
--- self.action (page-7 values) and overwrites our page-1 icon draws.
-local function ButtonStateDump(label)
-    local parts = {}
-    for i = 1, 10 do
-        local btn = _G["ActionButton" .. i]
-        if btn then
-            local icon = _G[btn:GetName() .. "Icon"]
-            local tex = icon and icon:GetTexture() or "?"
-            parts[#parts + 1] = i .. ":act=" .. tostring(btn.action) .. ":tex=" .. tostring(tex)
-        end
-    end
-    MobileUI_Debug("Btns " .. label .. ": " .. table.concat(parts, " "))
-end
-
-local function DelayedDump(seconds, label)
-    local f = CreateFrame("Frame")
-    local t = 0
-    f:SetScript("OnUpdate", function(self, el)
-        t = t + el
-        if t >= seconds then
-            ButtonStateDump(label)
-            self:SetScript("OnUpdate", nil)
-        end
-    end)
-end
-
 function MobileUILayout.InstallFlipBridge()
     for i = 1, 10 do
         local btn = _G["ActionButton" .. i]
@@ -861,6 +861,8 @@ local function RefreshScatterCombat()
                     cd.start, cd.duration = nil, nil
                 end
             end
+            local flash = _G[btn:GetName() .. "Flash"]
+            if flash and flash:IsShown() then flash:Hide() end
         end
     end
 end
@@ -901,6 +903,15 @@ function MobileUILayout.EnsureFlipWatcher()
     flipFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     flipFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
     flipFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    -- The buttons re-render from their stale self.action on these, so we
+    -- redraw right after their handlers run (our registration is newer,
+    -- so we dispatch after them) to kill the one-frame stale flicker at
+    -- combat transitions.
+    flipFrame:RegisterEvent("PLAYER_ENTER_COMBAT")
+    flipFrame:RegisterEvent("PLAYER_LEAVE_COMBAT")
+    flipFrame:RegisterEvent("ACTIONBAR_UPDATE_USABLE")
+    flipFrame:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN")
+    flipFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
     flipFrame:SetScript("OnEvent", function(self, event, ...)
         -- Combat-safe: ApplyFlip only sets attributes (secure channel) and
         -- draws icon textures.
@@ -908,6 +919,10 @@ function MobileUILayout.EnsureFlipWatcher()
             event, GetBonusBarOffset() or 0, GetActionBarPage() or 1,
             InCombatLockdown() and 1 or 0))
         MobileUILayout.ApplyFlip()
+        -- In combat, overwrite any stale re-render the buttons just did in
+        -- this same dispatch (icons, un-gray, cooldown, flash). Out of
+        -- combat the client's own updates are correct — leave them alone.
+        if InCombatLockdown() then RefreshScatterCombat() end
     end)
 end
 
