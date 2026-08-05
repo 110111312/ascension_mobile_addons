@@ -176,6 +176,7 @@ local function SaveOriginals()
                 normalTex = nt and nt:GetTexture(),
                 pushedTex = pt and pt:GetTexture(),
                 onEnter = btn:GetScript("OnEnter"),
+                onEvent = btn:GetScript("OnEvent"),
             }
         end
     end
@@ -481,6 +482,17 @@ local function ApplyActionBar()
             -- the button stays visible for our per-frame redraw.
             pcall(function() btn:SetAttribute("showgrid", 1) end)
             btn:SetScript("OnEnter", NoActionTooltipOnEnter)
+            -- Stop the client from dispatching this button's update events.
+            -- The client re-renders reparented buttons from their stale
+            -- self.action on UPDATE_SHAPESHIFT_FORM/combat events, and our
+            -- apply-time repositioning taints the (protected) button, so the
+            -- client's own self:Show()/self:Hide() inside ActionButton_Update
+            -- gets BLOCKED mid-combat ("AddOn 'MobileUI' prevented the call of
+            -- the secure function 'ActionButtonN:Show()'"). With no OnEvent
+            -- the client never touches the button: ApplyFlip (out of combat,
+            -- full stock update) and the per-frame combat redraw own the
+            -- display instead.
+            btn:SetScript("OnEvent", nil)
             MobileUI_Debug("  ActionButton" .. i .. " skinned")
         else
             MobileUI_Debug("  ActionButton" .. i .. " NOT FOUND")
@@ -564,6 +576,7 @@ local function RevertActionBar()
             local nm = _G["ActionButton" .. i .. "Name"]
             if nm and sv.nameShown then nm:Show() end
             btn:SetScript("OnEnter", sv.onEnter)
+            btn:SetScript("OnEvent", sv.onEvent)
         end
     end
     -- Revert MultiBarBottomLeft buttons (spots 11-15)
@@ -623,9 +636,12 @@ end
 --     and its page management breaks. So the display must be owned via
 --     non-protected regions only (icon/cooldown textures, vertex color)
 --     and the client must be prevented from hiding/re-rendering the
---     buttons from their stale self.action: showgrid=1 makes its Update
---     hide the cooldown region instead of the button, and a per-frame
---     combat re-assert redraws icon/color/cooldown from the attr page.
+--     buttons from their stale self.action: the buttons' OnEvent is
+--     cleared at apply (the client never dispatches their updates — which
+--     also stops its Show()/Hide() from being blocked on our tainted
+--     buttons), showgrid=1 keeps its Update from hiding them, and a
+--     per-frame combat re-assert redraws icon/color/cooldown/flash from
+--     the attr page (usability tints computed from the CORRECT action).
 local flipFrame
 
 -- The CLIENT owns the stance->bar mapping; we only mirror it. Generic rules
@@ -824,12 +840,18 @@ end
 -- from their stale self.action on UPDATE_SHAPESHIFT_FORM etc. (it cannot
 -- be corrected without tainting field writes), so in combat we re-assert
 -- the visible state every frame from the attr-resolved page: icon texture,
--- white vertex color (overrides the client's stale-action graying), and
--- cooldown. All targets are plain texture/cooldown regions — not protected
--- — so no taint, no field writes on the buttons. With showgrid=1 the
--- client's Update never hides the buttons themselves (it hides the
--- cooldown region instead), so they stay visible for this redraw.
+-- usability tints (out-of-mana blue, unusable gray — computed from the
+-- CORRECT action, matching stock ActionButton_UpdateUsable), cooldown,
+-- and the stock auto-attack flash (red blink every 0.4s while the action
+-- is an attack). The buttons' own flash logic can't run: their OnEvent is
+-- cleared (no UpdateFlash/StartFlash) and StartFlash would SetScript on
+-- the protected button, so we replicate the blink here. All targets are
+-- plain texture/cooldown regions — not protected — so no taint, no field
+-- writes on the buttons. With showgrid=1 the client's Update never hides
+-- the buttons themselves, so they stay visible for this redraw.
+local scatterFlash = {}  -- [btn] = { t = last-toggle time }
 local function RefreshScatterCombat()
+    local t = GetTime()
     for i = 1, 10 do
         local btn = _G["ActionButton" .. i]
         if btn then
@@ -843,7 +865,22 @@ local function RefreshScatterCombat()
             if tex then
                 icon:SetTexture(tex)
                 icon:Show()
-                icon:SetVertexColor(1, 1, 1)
+                local isUsable, notEnoughMana = IsUsableAction(action)
+                if isUsable then
+                    icon:SetVertexColor(1.0, 1.0, 1.0)
+                elseif notEnoughMana then
+                    icon:SetVertexColor(0.5, 0.5, 1.0)
+                else
+                    icon:SetVertexColor(0.4, 0.4, 0.4)
+                end
+                local nt = _G[btn:GetName() .. "NormalTexture"]
+                if nt then
+                    if notEnoughMana then
+                        nt:SetVertexColor(0.5, 0.5, 1.0)
+                    else
+                        nt:SetVertexColor(1.0, 1.0, 1.0)
+                    end
+                end
             else
                 icon:Hide()
             end
@@ -861,8 +898,27 @@ local function RefreshScatterCombat()
                     cd.start, cd.duration = nil, nil
                 end
             end
+            -- Stock auto-attack flash: red blink every 0.4s while the
+            -- (correct) action is an attack. State lives in a plain table —
+            -- never write fields on the secure button.
             local flash = _G[btn:GetName() .. "Flash"]
-            if flash and flash:IsShown() then flash:Hide() end
+            if flash then
+                if IsAttackAction(action) then
+                    local st = scatterFlash[btn]
+                    if not st then
+                        st = { t = t }
+                        scatterFlash[btn] = st
+                        flash:Show()
+                        flash:SetAlpha(1.0)
+                    elseif t - st.t >= 0.4 then
+                        st.t = t
+                        if flash:IsShown() then flash:Hide() else flash:Show() end
+                    end
+                else
+                    scatterFlash[btn] = nil
+                    if flash:IsShown() then flash:Hide() end
+                end
+            end
         end
     end
 end
