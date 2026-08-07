@@ -18,6 +18,7 @@ local DEFAULTS = {
     chatHidden   = false, -- true = entire chat UI reparented onto hidden frame
     lookSpeed    = 90,    -- cameraYawMoveSpeed; 90 = WoW min; lower = less sensitive
     layoutEnabled = true, -- true = apply the 5-point mobile layout revamp
+    debug        = false, -- true = also print MobileUI_Debug entries to chat
 }
 
 -- ============================================================================
@@ -37,8 +38,11 @@ function MobileUI_Debug(msg)
     while #MobileUIDebugLog > 500 do
         table.remove(MobileUIDebugLog, 1)
     end
-    -- Also print to chat
-    print("|cff888888[MobileUI]|r " .. msg)
+    -- Also print to chat (only when debug is enabled; the ring buffer is
+    -- always written so it stays available on disk for dev use)
+    if MobileDB and MobileDB.debug then
+        print("|cff888888[MobileUI]|r " .. msg)
+    end
 end
 
 function MobileUI_DebugClear()
