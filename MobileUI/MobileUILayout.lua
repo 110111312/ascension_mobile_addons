@@ -700,24 +700,28 @@ local function DelayedDump(seconds, label)
     end)
 end
 
+-- Resolve a scatter button's action slot exactly as ActionButton_CalculateAction
+-- will at click time (actionpage attribute first, then GetActionBarPage), so
+-- display and click always agree. Returns the actionID and the icon texture.
+local function ResolveScatterAction(btn, fallbackId)
+    local id = btn:GetID()
+    if not id or id < 1 then id = fallbackId end
+    local attrPage = tonumber(SecureButton_GetModifiedAttribute(btn, "actionpage"))
+    local page = attrPage or (GetActionBarPage() or 1)
+    local action = id + (page - 1) * (NUM_ACTIONBAR_BUTTONS or 12)
+    return action, _G[btn:GetName() .. "Icon"]
+end
+
 local function RefreshScatterButtons()
     if InCombatLockdown() then
         -- Manual refresh: the full ActionButton_UpdateAction path calls
         -- self:Show()/Hide() on the protected button (blocked in combat).
-        -- Icons are plain textures, so draw the icon directly. Resolve the
-        -- page EXACTLY as ActionButton_CalculateAction will at click time
-        -- (actionpage attribute first, then GetActionBarPage) so display
-        -- and click always agree — even if the attribute write was blocked
-        -- by lockdown. No field writes on the secure button (that taints).
+        -- Icons are plain textures, so draw the icon directly. No field
+        -- writes on the secure button (that taints).
         for i = 1, 12 do
             local btn = _G["ActionButton" .. i]
             if btn then
-                local id = btn:GetID()
-                if not id or id < 1 then id = i end
-                local attrPage = tonumber(SecureButton_GetModifiedAttribute(btn, "actionpage"))
-                local page = attrPage or (GetActionBarPage() or 1)
-                local action = id + (page - 1) * (NUM_ACTIONBAR_BUTTONS or 12)
-                local icon = _G[btn:GetName() .. "Icon"]
+                local action, icon = ResolveScatterAction(btn, i)
                 local tex = GetActionTexture(action)
                 if tex then
                     icon:SetTexture(tex)
@@ -857,12 +861,7 @@ local function RefreshScatterCombat()
     for i = 1, 10 do
         local btn = _G["ActionButton" .. i]
         if btn then
-            local id = btn:GetID()
-            if not id or id < 1 then id = i end
-            local attrPage = tonumber(SecureButton_GetModifiedAttribute(btn, "actionpage"))
-            local page = attrPage or (GetActionBarPage() or 1)
-            local action = id + (page - 1) * (NUM_ACTIONBAR_BUTTONS or 12)
-            local icon = _G[btn:GetName() .. "Icon"]
+            local action, icon = ResolveScatterAction(btn, i)
             local tex = GetActionTexture(action)
             if tex then
                 icon:SetTexture(tex)
