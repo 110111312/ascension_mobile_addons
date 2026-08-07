@@ -730,20 +730,22 @@ local function RefreshScatterButtons()
         -- Diagnostic: which page-1 slots actually have content, and which
         -- buttons drew an icon (the user sees only some buttons populated
         -- after the in-combat flip — need to know if the slots are empty or
-        -- the draw is failing).
-        local drawn, slots = {}, {}
-        for i = 1, 10 do
-            if GetActionTexture(i) then slots[#slots + 1] = i end
-        end
-        for i = 1, 12 do
-            local btn = _G["ActionButton" .. i]
-            if btn then
-                local icon = _G[btn:GetName() .. "Icon"]
-                if icon and icon:IsShown() then drawn[#drawn + 1] = i end
+        -- the draw is failing). Only when debug is enabled.
+        if MobileDB and MobileDB.debug then
+            local drawn, slots = {}, {}
+            for i = 1, 10 do
+                if GetActionTexture(i) then slots[#slots + 1] = i end
             end
+            for i = 1, 12 do
+                local btn = _G["ActionButton" .. i]
+                if btn then
+                    local icon = _G[btn:GetName() .. "Icon"]
+                    if icon and icon:IsShown() then drawn[#drawn + 1] = i end
+                end
+            end
+            MobileUI_Debug("Refresh: slotTex1_10={" .. table.concat(slots, ",") .. "} drawn={" .. table.concat(drawn, ",") .. "}")
+            ButtonStateDump("at-refresh")
         end
-        MobileUI_Debug("Refresh: slotTex1_10={" .. table.concat(slots, ",") .. "} drawn={" .. table.concat(drawn, ",") .. "}")
-        ButtonStateDump("at-refresh")
     else
         for i = 1, 12 do
             local btn = _G["ActionButton" .. i]
@@ -1220,9 +1222,11 @@ local function ApplyHideFrames()
                         if bf and shown == 1 then bf:Hide() end
                         local ok = pcall(ChangeActionBarPage, 1)
                         MobileUI_Debug(string.format("Flip unstealth: bonusShown=%d changePage=%s", shown, tostring(ok)))
-                        SlotDump("after-unstealth")
-                        ButtonStateDump("unstealth")
-                        DelayedDump(1.0, "unstealth+1s")
+                        if MobileDB and MobileDB.debug then
+                            SlotDump("after-unstealth")
+                            ButtonStateDump("unstealth")
+                            DelayedDump(1.0, "unstealth+1s")
+                        end
                     end
                     MobileUILayout.ApplyFlip()
                 end
