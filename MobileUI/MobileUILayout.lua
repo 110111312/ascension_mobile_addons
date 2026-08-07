@@ -40,22 +40,26 @@ local HIDE_FRAMES = {
     "MainMenuBarPageNumber", "MultiBarBottomRight",
     "MultiBarLeft", "MultiBarRight",
 }
+-- Frames hidden outright at apply (static player-frame parts Blizzard never
+-- re-shows). Condition-shown overlays live in PLAYER_OVERLAY instead — they
+-- are parked off-screen, not hidden, so the two lists are disjoint and the
+-- hide-only vs hide+park intent is explicit.
 local PLAYER_HIDE = {
     "PlayerPortrait", "PlayerFrameTexture", "PlayerFrameBackground",
-    "PlayerName", "PlayerFrameFlash", "PlayerStatusTexture",
-    "PlayerRestStateGlow", "PlayerAttackGlow", "PlayerPVPIcon",
+    "PlayerName", "PlayerRestStateGlow",
     "PlayerFrameLeaderIcon", "PlayerFrameMasterIcon", "PlayerFrameVehicleFeedback",
     "PlayerLevelText",
-    "PlayerAttackIcon", "PlayerStatusGlow", "PlayerAttackBackground",
-    "PlayerRestIcon", "PlayerRestGlow",
 }
 -- Condition-shown overlay frames (combat red flicker, resting zzz, pvp flag,
 -- damage flash). Blizzard re-shows these itself on PLAYER_ENTER_COMBAT /
 -- PLAYER_REGEN_DISABLED / PLAYER_UPDATE_RESTING / UNIT_FACTION, etc., but
 -- never re-anchors them (only Show/SetVertexColor/SetAlpha). So instead of
 -- fighting the re-show, park them 3000px below the frame: when the game shows
--- them they render off-screen and stay invisible. Original points are saved
--- and restored so revert puts them back exactly where they were.
+-- them they render off-screen and stay invisible. Original points AND shown
+-- state are saved and restored so revert puts them back exactly where they
+-- were. They are deliberately NOT in PLAYER_HIDE: hiding them at apply would
+-- be redundant with the park (the park is the stronger guarantee — it also
+-- covers Blizzard's re-show).
 local PLAYER_OVERLAY = {
     "PlayerStatusTexture", "PlayerAttackIcon", "PlayerAttackGlow",
     "PlayerStatusGlow", "PlayerAttackBackground",
@@ -218,7 +222,7 @@ local function SaveOriginals()
         saved.player.overlay = {}
         for _, name in ipairs(PLAYER_OVERLAY) do
             local f = _G[name]
-            if f then saved.player.overlay[name] = SavePoints(f) end
+            if f then saved.player.overlay[name] = { points = SavePoints(f), shown = f:IsShown() } end
         end
     end
     saved.hides = {}
@@ -1058,11 +1062,15 @@ local function RevertPlayerFrame()
         local f = _G[name]
         if f and saved.player.hidden[name] then f:Show() end
     end
-    -- Restore overlay frames to their original anchored positions
+    -- Restore overlay frames to their original anchored positions and shown
+    -- state (they were parked off-screen, not hidden, at apply).
     if saved.player.overlay then
-        for name, pts in pairs(saved.player.overlay) do
+        for name, sv in pairs(saved.player.overlay) do
             local f = _G[name]
-            if f then RestorePoints(f, pts) end
+            if f then
+                RestorePoints(f, sv.points)
+                if sv.shown then f:Show() else f:Hide() end
+            end
         end
     end
     local hb = _G["PlayerFrameHealthBar"]
