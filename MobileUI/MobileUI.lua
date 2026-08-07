@@ -27,8 +27,6 @@ local DEFAULTS = {
 -- File: WTF/Account/<account>/SavedVariables/MobileUI.lua
 -- ============================================================================
 
-MobileUI = MobileUI or {}
-
 function MobileUI_Debug(msg)
     if not MobileUIDebugLog then MobileUIDebugLog = {} end
     local time = date("%H:%M:%S")
