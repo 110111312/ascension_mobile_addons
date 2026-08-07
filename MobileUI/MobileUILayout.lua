@@ -898,12 +898,16 @@ local function RefreshScatterCombat()
                     cd.start, cd.duration = nil, nil
                 end
             end
-            -- Stock auto-attack flash: red blink every 0.4s while the
-            -- (correct) action is an attack. State lives in a plain table —
-            -- never write fields on the secure button.
+            -- Stock action-button flash: red blink every 0.4s while the
+            -- (correct) action is an attack, an auto-repeat (Auto Shot/Shoot),
+            -- or currently being used. IsAttackAction alone misses hunters'
+            -- Auto Shot and wand users' Shoot (see IsAutoRepeatAction in the
+            -- API reference); IsCurrentAction covers in-progress casts.
+            -- State lives in a plain table — never write fields on the
+            -- secure button.
             local flash = _G[btn:GetName() .. "Flash"]
             if flash then
-                if IsAttackAction(action) then
+                if IsAttackAction(action) or IsAutoRepeatAction(action) or IsCurrentAction(action) then
                     local st = scatterFlash[btn]
                     if not st then
                         st = { t = t }
