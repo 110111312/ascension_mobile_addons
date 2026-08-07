@@ -886,8 +886,11 @@ local function RefreshScatterCombat()
             end
             local cd = _G[btn:GetName() .. "Cooldown"]
             if cd then
-                local start, duration = GetActionCooldown(action)
-                if start and duration and duration > 0 then
+                local start, duration, enable = GetActionCooldown(action)
+                -- Only draw the spiral when the client says a cooldown UI
+                -- element should be shown (enable==1); duration>0 alone is
+                -- not sufficient (see GetActionCooldown in the API ref).
+                if start and duration and duration > 0 and enable == 1 then
                     if cd.start ~= start or cd.duration ~= duration then
                         cd:SetCooldown(start, duration)
                         cd.start, cd.duration = start, duration
