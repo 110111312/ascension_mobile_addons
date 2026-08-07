@@ -161,6 +161,17 @@ transition (bonus offset 1→0):
   no event fires, but without it the bar froze on stealth skills when
   unstealthing during combat.
 
+**Combat display ownership (`RefreshScatterCombat`):** while in combat the
+layout re-asserts the scatter buttons' visible state every frame from the
+attr-resolved page (the client re-renders them from stale `self.action`).
+This redraw covers the icon texture, usability tints, cooldown, and the stock
+action-button flash. The flash keys off `IsAttackAction` **or**
+`IsAutoRepeatAction` **or** `IsCurrentAction` — `IsAttackAction` alone would
+miss hunters' Auto Shot and wand users' Shoot (see `IsAutoRepeatAction` in
+the API reference). The cooldown spiral is only drawn when `GetActionCooldown`
+returns `enable == 1` (the reference notes `enable` "does not always correlate
+with whether the action is ready").
+
 ## Keybind Summary
 
 ```
