@@ -80,7 +80,7 @@ local lbfActionBar, lbfMenuBar
 
 -- State
 local saved = {}
-local menuBar, bagButton, combatFrame, guardFrame, pendingAction
+local menuBar, bagButton, combatFrame, guardFrame, pendingAction, bagHooked
 local HOTKEY_FRAMES = {}  -- populated in ApplyActionBar, hidden by guard OnUpdate
 
 -- No tooltip over the thumb-zone action buttons: GameTooltip would cover the
@@ -408,8 +408,8 @@ local function ApplyBags()
     bagButton:ClearAllPoints()
     bagButton:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 10, 10)
     bagButton:Show()
-    if not MobileUILayout._bagHooked then
-        MobileUILayout._bagHooked = true
+    if not bagHooked then
+        bagHooked = true
         hooksecurefunc("OpenAllBags", function()
             if MobileDB.layoutEnabled and IsBagOpen(0) then RepositionContainerFrames() end
         end)
