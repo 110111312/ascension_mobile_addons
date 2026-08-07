@@ -1261,7 +1261,6 @@ local function ApplyHideFrames()
             for _, f in ipairs(HOTKEY_FRAMES) do
                 if f and f:IsShown() then f:Hide() end
             end
-            -- Buffs: keep default position (no guard needed)
         end)
     end
     guardFrame:Show()
