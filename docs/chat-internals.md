@@ -8,7 +8,7 @@ FrameXML (`FloatingChatFrame.xml` / `FloatingChatFrame.lua`, `ChatFrame.xml`,
 > archives (`Data\common.MPQ`, `patch-*.MPQ`, …). There is no MPQ extractor in
 > this environment, so the `wowgaming/3.3.5-interface-files` GitHub mirror
 > (branch `main`, raw file URLs) is the practical reference for reading it.
-> See `doc/setup-and-workflow.md` for the on-disk Blizzard addons path.
+> See `docs/setup-and-workflow.md` for the on-disk Blizzard addons path.
 
 ## Chat frame hierarchy (what is parented to what)
 

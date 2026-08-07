@@ -16,6 +16,18 @@ Scales up the entire WoW UI for mobile screens, and lowers mouse-look sensitivit
 
 When streaming via Artemis multi-touch, swiping on the phone maps to mouse-look (right-click-drag) in WoW. WoW's built-in slider only goes 90–270, so 90 (the minimum) is still too sensitive for phone — a short swipe spins the camera too far. MobileUI lets you go **below 90** (down to 10), so you can swipe longer to look around less.
 
-## MoveAnything (reference)
+## reference/
 
-The original [MoveAnything](https://github.com/Ascension-Addons/MoveAnything) addon is kept in `MoveAnything/` as reference only. Do not enable both addons simultaneously.
+All reference material lives under `reference/`:
+
+### MoveAnything (reference)
+
+The original [MoveAnything](https://github.com/Ascension-Addons/MoveAnything) addon is kept in `reference/MoveAnything/` as reference only. Do not enable both addons simultaneously.
+
+### wowprogramming API reference
+
+`reference/wowprogramming/` is an offline mirror of the WoW 3.x API reference
+from wowprogramming.com (captured via the Wayback Machine, 2010-07-26 snapshot —
+close to the 3.3.5a era). It includes API functions, events, widgets, and console
+variables (cvars). Open `reference/wowprogramming/docs/index.html` to browse
+offline.

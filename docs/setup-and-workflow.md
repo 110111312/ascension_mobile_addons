@@ -5,8 +5,11 @@
 ### Working repo (this project) — `C:\W\ascension_mobile_addons`
 - `MobileUI/`     — our addon (the code we edit): `MobileUI.toc`, `MobileUI.lua`,
   `MobileUIOptions.xml`.
-- `MoveAnything/` — original addon by Wagthaa, **reference only**. Never modify.
-- `doc/`          — these notes.
+- `reference/MoveAnything/` — original addon by Wagthaa, **reference only**. Never modify.
+- `reference/wowprogramming/` — offline mirror of the WoW 3.x API reference
+  (wowprogramming.com, Wayback Machine 2010-07-26 snapshot): API functions,
+  events, widgets, and cvars.
+- `docs/`         — feature docs (one doc per feature).
 
 ### Game install (what the running game actually loads)
 - Addons folder: `C:\Ascension\Launcher\resources\ascension-live\Interface\AddOns\`
@@ -25,7 +28,7 @@
   `wowgaming/3.3.5-interface-files` GitHub mirror, e.g.:
   `https://raw.githubusercontent.com/wowgaming/3.3.5-interface-files/main/<File>.lua`
   (this is what was used for the chat-internals research; see
-  `doc/chat-internals.md`).
+  `docs/chat-internals.md`).
 
 ## Workflow: editing the addon and testing in-game
 
@@ -50,8 +53,10 @@
    then `/reload`.
 
 ## Reference rules
-- `MoveAnything/` and the Blizzard addons in the game install are **reference
+- `reference/MoveAnything/` and the Blizzard addons in the game install are **reference
   only** — never modify them.
+- `reference/wowprogramming/` is the canonical WoW 3.x API reference (offline
+  mirror of wowprogramming.com). Prefer it for API/event/widget/cvar lookups.
 - When researching WoW 3.3.5a APIs/frame structure, prefer reading the live
   Blizzard addons (on disk) and the `wowgaming/3.3.5-interface-files` mirror
   (for packed FrameXML) before guessing.

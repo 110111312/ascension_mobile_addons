@@ -7,3 +7,9 @@
 .idea
 # pi agent session artifacts
 .pi-subagents/
+
+# python cache
+__pycache__/
+
+# crawled raw HTML (regenerable; curated markdown kept under reference/wowprogramming/markdown)
+reference/wowprogramming/crawl_resource/wowprogramming_docs/

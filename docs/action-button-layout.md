@@ -20,21 +20,21 @@ Action buttons are arranged in a quarter-circle arc centered at the bottom-right
 | 10  | 0       | ActionButton10      | 51   | -336  | 29  | 4     | Bottom-aligned with btn 9      |
 
 > **ActionButton11/12 ("-" and "=") are NOT scattered.** Artemis cannot create
-> `-`/`=` virtual keys, so those two arc spots are filled by bottom-left bar
-> buttons 4 and 5 (bound to **T** and **F**) — the exact keys the Artemis preset
-> sends at those positions, so the icon matches the action. The `-`/`=` keybinds
-> still work from a physical keyboard (keybinds fire actions directly); the
-> buttons are just not shown in the mobile arc.
+> `-`/`=` virtual keys, so the five outermost arc spots (11-15) are filled by
+> bottom-left bar buttons 1-5 in order — the arc reads **1-2-3-4-5** left to
+> right (keybinds Q/E/R/T/F). The `-`/`=` keybinds still work from a physical
+> keyboard (keybinds fire actions directly); the buttons are just not shown in
+> the mobile arc.
 
 ## Action Bar 2 — Buttons 11–15 (MultiBarBottomLeftButton1–5)
 
 | Btn | Keybind | Source Frame                    | Size | X     | Y   | Layer | Notes                          |
 |-----|---------|--------------------------------|------|-------|-----|-------|--------------------------------|
-| 11  | t       | MultiBarBottomLeftButton4      | 51   | -299  | 89  | 4     | Replaces "-" (ActionButton11) spot |
-| 12  | f       | MultiBarBottomLeftButton5      | 51   | -271  | 170 | 4     | Replaces "=" (ActionButton12) spot |
-| 13  | q       | MultiBarBottomLeftButton1      | 51   | -161  | 277 | 4     | Equidistant to btn 6 & 7 (70px)|
-| 14  | e       | MultiBarBottomLeftButton2      | 51   | -86   | 298 | 4     | Equidistant to btn 5 & 6 (70px)|
-| 15  | r       | MultiBarBottomLeftButton3      | 51   | -20   | 316 | 4     | Above btn 5, right-aligned     |
+| 11  | q       | MultiBarBottomLeftButton1      | 51   | -299  | 89  | 4     | Replaces "-" (ActionButton11) spot |
+| 12  | e       | MultiBarBottomLeftButton2      | 51   | -271  | 170 | 4     | Replaces "=" (ActionButton12) spot |
+| 13  | r       | MultiBarBottomLeftButton3      | 51   | -161  | 277 | 4     | Equidistant to btn 6 & 7 (70px)|
+| 14  | t       | MultiBarBottomLeftButton4      | 51   | -86   | 298 | 4     | Equidistant to btn 5 & 6 (70px)|
+| 15  | f       | MultiBarBottomLeftButton5      | 51   | -20   | 316 | 4     | Above btn 5, right-aligned     |
 
 ## Critical Constraint: Never Reparent MultiBarBottomLeft Buttons
 
@@ -72,7 +72,17 @@ cast slots 1-5.
   scatter button's right edge and would render on screen next to the arc. They
   are hidden individually (`HideBar2Tail()` + guard re-hide) — hiding doesn't
   affect slot resolution, which comes from the attached bar, not visibility.
-- Revert re-shows the tail buttons (the bar itself is never moved).
+- **Combat re-show (bug + fix):** the client re-shows the bar's buttons when
+  combat starts, and the guard pauses its per-frame re-hide during lockdown
+  (Show/Hide on protected frames in combat taints → broken `UseAction` clicks
+  — commit `20e2723`). So at apply time (always out of combat) the tail is
+  also **parked off-screen** (`ParkBar2Tail()`: one-shot
+  `ClearAllPoints`/`SetPoint` to `BOTTOMLEFT (-3000, -3000)`, one independent
+  anchor per button). The combat re-show never re-anchors, so the re-shown
+  buttons render off-screen and stay invisible — with no per-frame
+  protected-frame calls during the fight.
+- Revert un-parks the tail buttons (restores their anchor-chain points) and
+  restores their original shown state (the bar itself is never moved).
 
 T/F/Q/E/R bindings are unchanged: `T/F → MULTIACTIONBAR1BUTTON4-5` and
 `Q/E/R → MULTIACTIONBAR1BUTTON1-3` → those buttons → slots 61-65. Assign skills
@@ -163,7 +173,7 @@ transition (bonus offset 1→0):
 - **Layer 2** (77px): btns 2, 3, 4 — surrounding btn 1 in a triangle
 - **Layer 3** (64px): btns 5, 6, 7, 8, 9 — wider arc ring
 - **Layer 4** (51px): btns 10, 11, 12, 13, 14, 15 — outer scattered ring
-  (11/12 = bar-2 T/F buttons, 13-15 = bar-2 Q/E/R buttons)
+  (11-15 = bar-2 buttons 1-5 in order: Q/E/R/T/F)
 
 ## Skinning
 
