@@ -70,7 +70,6 @@ local PLAYER_TEXT = {
     "PlayerFrameHealthBarTextLeft", "PlayerFrameHealthBarTextRight",
     "PlayerFrameManaBarTextLeft", "PlayerFrameManaBarTextRight",
 }
-local BUFF_FRAMES = { "BuffFrame" }
 
 -- LibButtonFacade for circular button skinning (embedded, no external addon needed)
 local LBF = LibStub and LibStub("LibButtonFacade", true)
@@ -230,11 +229,6 @@ local function SaveOriginals()
         local f = _G[name]
         if f then saved.hides[name] = f:IsShown() end
     end
-    saved.buffs = {}
-    for _, name in ipairs(BUFF_FRAMES) do
-        local f = _G[name]
-        if f then saved.buffs[name] = { points = SavePoints(f) } end
-    end
     -- ChatFrame1: original position, so layout revert restores it exactly
     local cf = _G["ChatFrame1"]
     if cf then saved.chatFrame = { points = SavePoints(cf) } end
@@ -278,19 +272,6 @@ local function RevertMap()
     if mm and saved.minimap and saved.minimap.onMouseUp then
         mm:SetScript("OnMouseUp", saved.minimap.onMouseUp)
         MobileUI_Debug("RevertMap: minimap click restored (ping enabled)")
-    end
-end
-
--- 1b. Buff Frame → move to the RIGHT of minimap (minimap is at top-left)
--- Buffs grow right-to-left in WoW, so anchor the rightmost buff to the right of the minimap area
--- 1b. Buff Frame -> keep default position (top-right, Blizzard default)
-local function ApplyBuffs()
-    MobileUI_Debug("Buffs: default position (no repositioning)")
-end
-local function RevertBuffs()
-    for _, name in ipairs(BUFF_FRAMES) do
-        local f, sv = _G[name], saved.buffs and saved.buffs[name]
-        if f and sv then RestorePoints(f, sv.points) end
     end
 end
 
@@ -1335,7 +1316,6 @@ function MobileUILayout:Apply()
     end
     step("SaveOriginals", SaveOriginals)
     step("ApplyMap", ApplyMap)
-    step("ApplyBuffs", ApplyBuffs)
     step("ApplyMenuBar", ApplyMenuBar)
     step("ApplyBags", ApplyBags)
     step("ApplyActionBar", ApplyActionBar)
@@ -1353,7 +1333,6 @@ function MobileUILayout:Revert()
     end
     if not saved.init then return end
     RevertHideFrames()
-    RevertBuffs()
     RevertMap()
     RevertMenuBar()
     RevertBags()
