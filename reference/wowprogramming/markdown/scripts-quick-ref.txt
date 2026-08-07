@@ -1,0 +1,67 @@
+# WoW Script Handlers Quick Reference (65 handlers)
+
+OnAnimFinished | OnAnimFinished(self) | Run when the model's animation finishes. Only run for models which do not repeat their animations (e.g. the model used f
+OnAttributeChanged | OnAttributeChanged(self, "name", value) | Run when a frame attribute is changed. Attributes are used by the secure template system; see here for more details.
+OnChar | OnChar(self, "text") | Run for each text character typed in the frame. This script is run for each character produced, not necessarily each key
+OnCharComposition | OnCharComposition(self, "text") | Run when the edit box's input composition mode changes. Primarily used in international clients that can use IME composi
+OnClick | OnClick(self, "button", down) | Run when the button is clicked. By default, this script is only run for the left mouse button's "up" action; the `:Regis
+OnColorSelect | OnColorSelect(self, r, g, b) | Run when the color select frame's color selection changes
+OnCursorChanged | OnCursorChanged(self, x, y, width, height) | Run when the position of the text insertion cursor in the edit box changes. Also run when the edit box gains or loses ke
+OnDisable | OnDisable(self) | Run when the frame is disabled
+OnDoubleClick | OnDoubleClick(self, "button") | Run when the button is double-clicked. Run if the mouse button is clicked twice within 0.3 seconds. (The `PreClick`, `On
+OnDragStart | OnDragStart(self, "button") | Run when the mouse is dragged starting in the frame. In order for a drag action to begin, the mouse button must be press
+OnDragStop | OnDragStop(self) | Run when the mouse button is released after a drag started in the frame. This script is run only for drags started withi
+OnEditFocusGained | OnEditFocusGained(self) | Run when the edit box becomes focused for keyboard input
+OnEditFocusLost | OnEditFocusLost(self) | Run when the edit box loses keyboard input focus
+OnEnable | OnEnable(self) | Run when the frame is enabled
+OnEnter | OnEnter(self, motion) | Run when the mouse cursor enters the frame's interactive area. Note that a frame's mouse-interactive area can be changed
+OnEnterPressed | OnEnterPressed(self) | Run when the Enter (or Return) key is pressed while the edit box has keyboard focus
+OnEscapePressed | OnEscapePressed(self) | Run when the Escape key is pressed while the edit box has keyboard focus. By default, an `EditBox` provides no way to cl
+OnEvent | OnEvent(self, "event", ...) | Run whenever an event fires for which the frame is registered. In order for this script to be run, the frame must be reg
+OnFinished | OnFinished(self, requested) | Run when the animation (or animation group) finishes animating. Does not run for an animation group set to loop unless t
+OnHide | OnHide(self) | Run when the frame's visbility changes to hidden. This script handler runs whether the frame was directly hidden (via it
+OnHorizontalScroll | OnHorizontalScroll(self, offset) | Run when the scroll frame's horizontal scroll position changes
+OnHyperlinkClick | OnHyperlinkClick(self, "linkData", "link", "button") | Run when the mouse clicks a hyperlink in the scrolling message frame or SimpleHTML frame. This script handler is run whe
+OnHyperlinkEnter | OnHyperlinkEnter(self, "linkData", "link") | Run when the mouse moves over a hyperlink in the scrolling message frame or SimpleHTML frame
+OnHyperlinkLeave | OnHyperlinkLeave(self, "linkData", "link") | Run when the mouse moves away from a hyperlink in the scrolling message frame or SimpleHTML frame
+OnInputLanguageChanged | OnInputLanguageChanged(self, "language") | Run when the edit box's language input mode changes. Applies to keyboard input methods, not in-game languages or client 
+OnKeyDown | OnKeyDown(self, "key") | Run when a keyboard key is pressed if the frame is keyboard enabled. Does not run for focused `EditBox`es.
+OnKeyUp | OnKeyUp(self, "key") | Run when a keyboard key is released if the frame is keyboard enabled. Does not run for focused `EditBox`es.
+OnLeave | OnLeave(self, motion) | Run when the mouse cursor leaves the frame's interactive area. Note that a frame's mouse-interactive area can be changed
+OnLoad | OnLoad(self) | Run when the frame is created. In practice, this handler is only applicable when defined in XML (either for frames creat
+OnLoop | OnLoop(self, "loopState") | Run when the animation group's loop state changes
+OnMessageScrollChanged | OnMessageScrollChanged(self) | Run when the scrolling message frame's scroll position changes. A `ScrollingMessageFrame`'s scroll position can change n
+OnMinMaxChanged | OnMinMaxChanged(self, min, max) | Run when the slider's or status bar's minimum and maximum values change. Run when the minimum/maximum values are set pro
+OnMouseDown | OnMouseDown(self, "button") | Run when a mouse button is pressed while the cursor is over the frame. For further details, see the example under `OnCli
+OnMouseUp | OnMouseUp(self, "button") | Run when the mouse button is released following a mouse down action in the frame. This script is always run for the fram
+OnMouseWheel | OnMouseWheel(self, delta) | Run when the frame receives a mouse wheel scrolling action. In order for this handler to be run, the frame must be mouse
+OnMovieFinished | OnMovieFinished(self) | Run when a movie frame's movie ends
+OnMovieHideSubtitle | OnMovieHideSubtitle(self) | Runs when the movie's most recently displayed subtitle should be hidden
+OnMovieShowSubtitle | OnMovieShowSubtitle(self, "text") | Runs when a subtitle for the playing movie should be displayed
+OnPause | OnPause(self) | Run when the animation (or animation group) is paused
+OnPlay | OnPlay(self) | Run when the animation (or animation group) begins to play
+OnReceiveDrag | OnReceiveDrag(self) | Run when the mouse button is released after dragging into the frame. This script is run for the frame under the cursor a
+OnScrollRangeChanged | OnScrollRangeChanged(self, xOffset, yOffset) | Run when the scroll frame's scroll position is changed. Only run when the scroll position changes due to changes in the 
+OnShow | OnShow(self) | Run when the frame becomes visible. This script handler runs whether the frame was directly shown (via its `:Show()` met
+OnSizeChanged | OnSizeChanged(self, width, height) | Run when a frame's size changes
+OnSpacePressed | OnSpacePressed(self) | Run when the space bar is pressed while the edit box has keyboard focus
+OnStop | OnStop(self, requested) | Run when the animation (or animation group) is stopped
+OnTabPressed | OnTabPressed(self) | Run when the Tab key is pressed while the edit box has keyboard focus. Providing a handler for this script can be useful
+OnTextChanged | OnTextChanged(self, userInput) | Run when the edit box's text is changed. This script is run both when text is typed in the edit box (for each character 
+OnTextSet | OnTextSet(self) | Run when the edit box's text is set programmatically. Only run as a result of calling `:SetText()`.
+OnTooltipAddMoney | OnTooltipAddMoney(self, amount, maxAmount) | Run when an amount of money should be added to the tooltip. This happens when the tooltip is set to display an item for 
+OnTooltipCleared | OnTooltipCleared(self) | Run when the tooltip is hidden or its content is cleared
+OnTooltipSetAchievement | OnTooltipSetAchievement(self) | Run when the tooltip is filled with information about an achievement. See `:SetAchievement()`.
+OnTooltipSetDefaultAnchor | OnTooltipSetDefaultAnchor(self) | Run when the tooltip is repositioned to its default anchor location. This happens when (for example) mousing over a unit
+OnTooltipSetEquipmentSet | OnTooltipSetEquipmentSet(self) | Run when the tooltip is filled with information about an equipment set. See `:SetEquipmentSet()`.
+OnTooltipSetFrameStack | OnTooltipSetFrameStack(self) | Run when the tooltip is filled with a list of frames under the mouse cursor. See `:SetFrameStack()`.
+OnTooltipSetItem | OnTooltipSetItem(self) | Run when the tooltip is filled with information about an item. See `:GetItem()` and the several `GameTooltip` methods fo
+OnTooltipSetQuest | OnTooltipSetQuest(self) | Run when the tooltip is filled with information about a quest. See `GameTooltip:SetHyperlink()` to load the tooltip with
+OnTooltipSetSpell | OnTooltipSetSpell(self) | Run when the tooltip is filled with information about a spell. See `:SetSpell()`, `:SetSpellByID()`, and `:GetSpell()`.
+OnTooltipSetUnit | OnTooltipSetUnit(self) | Run when the tooltip is filled with information about a unit. See `:SetUnit()` and `:GetUnit()`.
+OnUpdate | OnUpdate(self, elapsed) | Run each time the screen is drawn by the game engine. This handler runs for each frame (not `Frame`) drawn -- if WoW is 
+OnUpdateModel | OnUpdateModel(self) | Run when a model changes or animates
+OnValueChanged | OnValueChanged(self, value) | Run when the slider's or status bar's value changes. Run when the value is set programmatically with `Slider:SetValue()`
+OnVerticalScroll | OnVerticalScroll(self, offset) | Run when the scroll frame's vertical scroll position changes
+PostClick | PostClick(self, "button", down) | Run immediately following the button's `OnClick` handler with the same arguments. Useful for processing clicks on a butt
+PreClick | PreClick(self, "button", down) | Run immediately before the button's `OnClick` handler with the same arguments. Useful for processing clicks on a button 

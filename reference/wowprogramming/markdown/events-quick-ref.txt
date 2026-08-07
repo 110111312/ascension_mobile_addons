@@ -1,0 +1,516 @@
+# WoW Events Quick Reference (514 events)
+
+ACHIEVEMENT_EARNED | Fires when the player earns an achievement
+ACTIONBAR_HIDEGRID | Fires when an item, spell or other entity that can be placed into an action bar slot is removed from the cursor. In the 
+ACTIONBAR_PAGE_CHANGED | Fires when the main action bar changes pages
+ACTIONBAR_SHOWGRID | Fires when an item, spell or other entity that can be placed into an action bar slot is picked up onto the cursor. In th
+ACTIONBAR_SLOT_CHANGED | Fires when the contents of an action bar slot change
+ACTIONBAR_UPDATE_COOLDOWN | Fires when the cooldown for an action bar item begins or ends
+ACTIONBAR_UPDATE_STATE | Fires when the state of an action bar item changes. State changes include the action becoming the current or active acti
+ACTIONBAR_UPDATE_USABLE | Fires when an action becomes usable or unusable. For example, an action may become unusable if it contains a spell for w
+ACTIVE_TALENT_GROUP_CHANGED | Fires when the player (with Dual Talent Specialization enabled) switches talent builds
+ADDON_ACTION_BLOCKED | Fires when a non-Blizzard addon attempts to use a protected API
+ADDON_ACTION_FORBIDDEN | Fires when a non-Blizzard addon attempts to use a protected API. In the default UI, this event triggers a dialog box pro
+ADDON_LOADED | Fires when an addon and its saved variables are loaded. Fires once for each addon (i.e. an addon loaded early in sequenc
+AREA_SPIRIT_HEALER_IN_RANGE | Fires when the player enters into the area of effect of a spirit healer that periodically resurrects nearby player units
+AREA_SPIRIT_HEALER_OUT_OF_RANGE | Fires when the player enters leaves the area of effect of a spirit healer that periodically resurrects nearby player uni
+ARENA_OPPONENT_UPDATE | Fires when the availability of information about an arena opponent changes
+ARENA_SEASON_WORLD_STATE | Fires when the arena season changes
+ARENA_TEAM_INVITE_REQUEST | Fires when the player is invited to join an arena team
+ARENA_TEAM_ROSTER_UPDATE | Fires when roster detail information for one of the player's arena teams becomes available
+ARENA_TEAM_UPDATE | Fires when the player joins or leaves an arena team
+AUCTION_BIDDER_LIST_UPDATE | Fires when information becomes available or changes for the list of auctions bid on by the player
+AUCTION_HOUSE_CLOSED | Fires when the player ends interaction with an auction house
+AUCTION_HOUSE_DISABLED | Fires when the server refuses to give the player access to the auction house because it is disabled
+AUCTION_HOUSE_SHOW | Fires when the player begins interaction with an auction house
+AUCTION_ITEM_LIST_UPDATE | Fires when the information becomes available for the list of auction browse/search results
+AUCTION_MULTISELL_FAILURE | Fires when an auction house multisell could not complete for any reason
+AUCTION_MULTISELL_START | Fires when the player starts a multisell in the auction house
+AUCTION_MULTISELL_UPDATE | Fires when one of the auctions in an auction house multisell has successfully been created
+AUTOEQUIP_BIND_CONFIRM | Fires when the player attempts to equip an item which will become soulbound in the process
+AUTOFOLLOW_BEGIN | Fires when the player starts following another character
+AUTOFOLLOW_END | Fires when the player stops following another character
+BAG_CLOSED | Fires when one of the player's containers is closed
+BAG_OPEN | Fires when one of the player's containers is opened
+BAG_UPDATE | Fires when the contents of one of the player's containers change. Container contents may change due to obtaining an item
+BAG_UPDATE_COOLDOWN | Fires when the cooldown begins or ends for an item in one of the player's containers
+BANKFRAME_CLOSED | Fires when the player ends interaction with a bank
+BANKFRAME_OPENED | Fires when the player begins interaction with a bank
+BARBER_SHOP_CLOSE | Fires when the player ends interaction with a barber shop
+BARBER_SHOP_OPEN | Fires when the player begins interaction with a barber shop
+BARBER_SHOP_SUCCESS | Fires immediately when changes to the player's appearance have been purchased at a barber shop. Both this event and `BAR
+BATTLEFIELD_MGR_EJECT_PENDING | Fires when the player will be removed from or cannot yet enter a queued world PvP zone (e.g. Wintergrasp)
+BATTLEFIELD_MGR_EJECTED | Fires when the player has been removed from a queued world PvP zone (e.g. Wintergrasp)
+BATTLEFIELD_MGR_ENTERED | Fires when the player has been accepted into a queued world PvP zone (e.g. Wintergrasp)
+BATTLEFIELD_MGR_ENTRY_INVITE | Fires when the player is invited to enter a queued world PvP zone (e.g. Wintergrasp)
+BATTLEFIELD_MGR_QUEUE_INVITE | Fires when the player is invited to queue for a world PvP zone (e.g. Wintergrasp)
+BATTLEFIELD_MGR_QUEUE_REQUEST_RESPONSE | Fires in response to the player's attempt to enter or queue for a world PvP zone (e.g. Wintergrasp). Indicates whether t
+BATTLEFIELD_MGR_STATE_CHANGE | Fires when the player's state changes in the queue for a world PvP zone (e.g. Wintergrasp)
+BATTLEFIELDS_CLOSED | Fires when the UI is no longer available for queueing for an arena or specific battleground instance
+BATTLEFIELDS_SHOW | Fires when the UI becomes available for queueing for an arena or specific battleground instance
+BILLING_NAG_DIALOG | Fires when a message should be shown about the player's paid game time expiring soon
+BIND_ENCHANT | Fires when the player attempts to an enchant an item which will become soulbound in the process
+BN_CONNECTED | Fires when the player connects to Battle.net
+BN_CUSTOM_MESSAGE_CHANGED | Fires when the player's Battle.net custom message (broadcast) is changed
+BN_DISCONNECTED | Fires when the player disconnects from Battle.net
+BN_FRIEND_ACCOUNT_OFFLINE | Fires when one of your RealID friends logs off
+BN_FRIEND_ACCOUNT_ONLINE | Fires when one of your RealID friends log on
+BN_MATURE_LANGUAGE_FILTER | Fires whenever the battle.net mature language filter setting is changed.
+BN_NEW_PRESENCE | Fires when information about a new Battle.net presence is available
+CALENDAR_ACTION_PENDING | Fires when a change to the calendar is in progress
+CALENDAR_CLOSE_EVENT | Fires when the player ends viewing or editing details of a calendar event
+CALENDAR_EVENT_ALARM | Fires when a calendar event is soon to begin. Causes the default UI to display a message in the chat window 15 minutes p
+CALENDAR_NEW_EVENT | Fires when an event created by the player is added to the calendar
+CALENDAR_OPEN_EVENT | Fires when the player begins viewing or editing details of a calendar event
+CALENDAR_UPDATE_ERROR | Fires when a calendar-related error message should be displayed
+CALENDAR_UPDATE_EVENT | Fires when details become available for the event being viewed or edited
+CALENDAR_UPDATE_EVENT_LIST | Fires when the list of events visible on the calendar changes
+CALENDAR_UPDATE_INVITE_LIST | Fires when the invite/signup list is updated for the event being viewed or edited
+CALENDAR_UPDATE_PENDING_INVITES | Fires when the player receives new calendar event invitations
+CANCEL_LOOT_ROLL | Fires when the player cancels a loot roll. Can occur after the player is requested to confirm rolling for an item which 
+CANCEL_SUMMON | Fires when a summons offered to the player is canceled
+CHANNEL_FLAGS_UPDATED | Fires when information about a channel for the channel list display changes
+CHANNEL_INVITE_REQUEST | Fires when a player is invited into a chat channel
+CHANNEL_PASSWORD_REQUEST | Fires when the player attempts to join a password protected channel
+CHANNEL_ROSTER_UPDATE | Fires when the list of members in a channel changes
+CHANNEL_UI_UPDATE | Fires when information for the channel list display changes
+CHANNEL_VOICE_UPDATE | Fires when a member in a voice chat channel starts or stops speaking
+CHARACTER_POINTS_CHANGED | Fires when the player's amount of available talent points changes. Note that since the introduction of Death Knights, wh
+CHAT_MSG_ACHIEVEMENT | Fires when a nearby character earns an achievement
+CHAT_MSG_ADDON | Fires when an addon communication message is received (see `SendAddonMessage()`). The local client receives any messages
+CHAT_MSG_AFK | Fires when an automatic AFK response is received. When the player attempts to whisper or invite a character whose status
+CHAT_MSG_BG_SYSTEM_ALLIANCE | Fires when an Alliance-related battleground system message is received. Faction-related messages include flags picked up
+CHAT_MSG_BG_SYSTEM_HORDE | Fires when a Horde-related battleground system message is received. Faction-related messages include flags picked up, ba
+CHAT_MSG_BN_CONVERSATION | Fires when you type a message in chat or when you recive a message from another player using Battle.Net
+CHAT_MSG_BN_CONVERSATION_NOTICE | Fires when you join a conversation channel (private channel for you and your friends) on Battle.Net
+CHAT_MSG_BN_INLINE_TOAST_BROADCAST | Fires whenever a user changes their broadcast message on Battle.Net
+CHAT_MSG_BN_INLINE_TOAST_BROADCAST_INFORM | Fires when the player sends a new broadcast (online message)
+CHAT_MSG_BN_WHISPER | Fires when you receive a whisper though Battle.Net
+CHAT_MSG_CHANNEL | Fires when a message is received in a world or custom chat channel. Used for numbered chat channels (e.g. Trade, General
+CHAT_MSG_CHANNEL_JOIN | Fires when another character joins a world or custom chat channel monitored by the player. Used for numbered chat channe
+CHAT_MSG_CHANNEL_LEAVE | Fires when another character leaves a world or custom chat channel monitored by the player. Used for numbered chat chann
+CHAT_MSG_CHANNEL_LIST | Fires in response to a channel list query (e.g. `/chatlist`). If the channel contains many characters, the event fires m
+CHAT_MSG_CHANNEL_NOTICE_USER | Fires when certain actions pertaining to specific members happen on a world or custom chat channel. Examples of member-s
+CHAT_MSG_COMBAT_FACTION_CHANGE | Fires when the player gains or loses reputation with a faction
+CHAT_MSG_COMBAT_HONOR_GAIN | Fires when the player gains honor points
+CHAT_MSG_COMBAT_MISC_INFO | Fires for miscellaneous messages to be displayed in the combat log, such as loss of equipment durability upon death
+CHAT_MSG_COMBAT_XP_GAIN | Fires when the player gains experience points
+CHAT_MSG_DND | Fires when an automatic DND response is received. When the player attempts to whisper or invite a character whose status
+CHAT_MSG_EMOTE | Fires when a custom emote message is received.. Custom emote messages are those sent by typing `/emote` followed by some
+CHAT_MSG_FILTERED | Fires when the player attempts to send a chat message which is blocked by the spam filter
+CHAT_MSG_GUILD | Fires when a message is received in the guild chat channel
+CHAT_MSG_GUILD_ACHIEVEMENT | Fires when a member of the player's guild earns an achievement
+CHAT_MSG_IGNORED | Fires when an automatic response is received after whispering or inviting a character who is ignoring the player
+CHAT_MSG_LOOT | Fires when receiving notice that the player or a member of the player's group has looted an item
+CHAT_MSG_MONEY | Fires when the player receives money as loot
+CHAT_MSG_MONSTER_EMOTE | Fires when a nearby NPC performs emote text. e.g. Cro Threadstrong crushes an apple under his boot.
+CHAT_MSG_MONSTER_PARTY | Fires when an NPC speaks to the player's party chat channel
+CHAT_MSG_MONSTER_SAY | Fires when a nearby NPC speaks (visible only to players in the immediate area). e.g. Granny smith says: What is that poo
+CHAT_MSG_MONSTER_WHISPER | Fires when an NPC whispers to the player
+CHAT_MSG_MONSTER_YELL | Fires when an NPC yells (visible to players in a wide area or the entire zone). e.g. Doom Lord Kazzak yells, All mortals
+CHAT_MSG_OFFICER | Fires when a message is received in officer chat.
+CHAT_MSG_OPENING | Fires for messages about the player "opening" a world object. Used for some, but not all "openable" world objects (e.g. 
+CHAT_MSG_PARTY | Fires when a message is received in the party chat channel
+CHAT_MSG_PET_INFO | Fires for pet-related messages normally displayed in the combat log (e.g. summoning or dismissing a pet)
+CHAT_MSG_RAID | Fires when a message is received in the raid chat channel
+CHAT_MSG_RAID_BOSS_EMOTE | Fires when a raid boss performs emote text. In the default UI, emotes from a raid boss are displayed in large text in th
+CHAT_MSG_RAID_BOSS_WHISPER | Fires when a raid boss whispers to the player. In the default UI, whispers from a raid boss are displayed in large text 
+CHAT_MSG_RAID_LEADER | Fires when a message is received in the raid chat channel from the raid leader
+CHAT_MSG_RAID_WARNING | Fires when a raid warning message is received. These messages can be sent by the raid leader or a raid assistant; in the
+CHAT_MSG_RESTRICTED | Fires when the player attempts to send a chat message which is disallowed because the player is on a trial account
+CHAT_MSG_SAY | Fires when the player or a nearby character speaks (visible to other nearby characters)
+CHAT_MSG_SKILL | Fires when skill related messages are received.. e.g. "Your skill in Unarmed has increased to 357."
+CHAT_MSG_SYSTEM | Fires when a system message is received. System messages are a catch-all category for messages received in via the chat 
+CHAT_MSG_TARGETICONS | Fires when a target icon message is sent in chat.
+CHAT_MSG_TEXT_EMOTE | Fires when the player receives a standard emote (e.g. `/dance`, `/flirt`) message. For custom emote messages (those sent
+CHAT_MSG_TRADESKILLS | Fires when the player or a nearby character performs a trade skill recipe
+CHAT_MSG_WHISPER | Fires when the player receives a whisper from a player character
+CHAT_MSG_WHISPER_INFORM | Fires when the player sends a whisper to a player character
+CHAT_MSG_YELL | Fires when the player or another player character yells (visible to other characters in a wide area)
+CINEMATIC_START | Fires when an in-game-engine cinematic begins to play. Used primarily for the introductory cinematic which plays upon lo
+CINEMATIC_STOP | Fires when an in-game-engine cinematic stops playing. Used primarily for the introductory cinematic which plays upon log
+CLOSE_INBOX_ITEM | Fires when the mail message being viewed is no longer available. Occurs when the player takes all items attached to the 
+CLOSE_TABARD_FRAME | Fires when the player ends interaction with a tabard designer
+CLOSE_WORLD_MAP | Fires when the world map should be hidden in response to external conditions. Such conditions include being teleported b
+COMBAT_LOG_EVENT_UNFILTERED | Fires when a combat log event is received. This event fires for all combat events visible to the player; `COMBAT_LOG_EVE
+COMBAT_RATING_UPDATE | Fires when the player's combat rating statistics change
+COMBAT_TEXT_UPDATE | Fires when a message is received which can be displayed by the default UI's floating combat text feature
+COMPANION_LEARNED | Fires when the player learns to summon a new mount or non-combat pet
+COMPANION_UNLEARNED | Fires when the player unlearns a mount or a companion. This will pretty much never happen, unless a Game Master gets inv
+COMPANION_UPDATE | Fires when new information about the player's mounts and non-combat pets is available
+CONFIRM_BINDER | Fires when the player attempts to set a new Hearthstone location
+CONFIRM_DISENCHANT_ROLL | Fires when the player attempts to roll disenchant for an item which Binds on Pickup
+CONFIRM_LOOT_ROLL | Fires when the player attempts to roll for a loot item which Binds on Pickup
+CONFIRM_SUMMON | Fires when a summons is offered to the player
+CONFIRM_TALENT_WIPE | Fires when the player attempts to unlearn talents
+CONFIRM_XP_LOSS | Fires when the player attempts to resurrect at a graveyard spirit healer. Early in WoW's development, resurrecting at a 
+CORPSE_IN_INSTANCE | Fires when the player (dead, in spirit form) approaches the entrance to the instance in which his corpse is located
+CORPSE_IN_RANGE | Fires when the player (dead, in spirit form) approaches near enough to his corpse to return to life
+CORPSE_OUT_OF_RANGE | Fires when the player (dead, in spirit form) moves too far away from his corpse to resurrect
+CRITERIA_UPDATE | Fires when information about achievement criteria or player statistics becomes available
+CURRENCY_DISPLAY_UPDATE | Fires when new information for the currency list is available
+CURRENT_SPELL_CAST_CHANGED | Fires when the player starts or stops (cancels or finishes) casting a spell
+CURSOR_UPDATE | Fires when the mouse cursor image or contents is changed
+CVAR_UPDATE | Fires when the value of a configuration variable is updated. Fires regardless of whether the variable's value has change
+DELETE_ITEM_CONFIRM | Fires when the player attempts to delete an item
+DISABLE_XP_GAIN | Fires when the player disables experience point gains
+DISPLAY_SIZE_CHANGED | Fires when the screen resolution changes
+DUEL_FINISHED | Fires when a duel in which the player is participating ends. Can fire due to the duel being won or forfeit.
+DUEL_INBOUNDS | Fires when the player reenters the duel area after leaving its boundaries
+DUEL_OUTOFBOUNDS | Fires when the player begins to move outside the boundaries of a duel area. If the player remains outside the duel area 
+DUEL_REQUESTED | Fires when the player is challenged to a duel. No event (other than the associated system message) fires when the player
+ENABLE_TAXI_BENCHMARK | Fires when taxi benchmarking mode is enabled
+ENABLE_XP_GAIN | Fires when the player re-enabled experience point gain after disabling it
+END_BOUND_TRADEABLE | Fires when the player attempts an action which will make a looted Bind on Pickup item no longer tradeable. A Bind on Pic
+END_REFUND | Fires when the player attempts an action which will make an item purchased with alternate currency no longer refundable.
+EQUIP_BIND_CONFIRM | Fires when the player attempts to equip an item which will become soulbound in the process
+EQUIPMENT_SETS_CHANGED | Fires when the player's list of equipment sets changes
+EQUIPMENT_SWAP_FINISHED | Fires when the process of switching equipment sets is complete. Many other events fire as the equipment swap takes place
+EQUIPMENT_SWAP_PENDING | Fires when the player begins to switch equipment sets. Many other events fire as the equipment swap takes place (each pi
+EXECUTE_CHAT_LINE | Fires when a chat message is encountered in a running macro
+FRIENDLIST_UPDATE | Fires when the content of the player's friends list becomes available or changes
+GLYPH_ADDED | Fires when a glyph is inscribed into the player's spellbook
+GLYPH_DISABLED | Fires when a glyph slot is no longer available. Currently, glyph slots are enabled as the player gains levels (at levels
+GLYPH_ENABLED | Fires when a glyph slot becomes available. New glyph slots become available as the player gains levels.
+GLYPH_REMOVED | Fires when the player removes an inscribed glyph
+GLYPH_UPDATED | Fires when information about the player's inscribed glyphs becomes available
+GMRESPONSE_RECEIVED | Fires when the player receives a response to a GM ticket. Used for non-interactive responses, not GM conversations.
+GMSURVEY_DISPLAY | Fires when the player is invited to participate in a GM feedback survey
+GOSSIP_CLOSED | Fires when an NPC gossip interaction ends. Many NPCs provide a single gossip option leading into another type of interac
+GOSSIP_CONFIRM | Fires when the player is requested to confirm a gossip choice. Used when a gossip interaction involves a warning, such a
+GOSSIP_CONFIRM_CANCEL | Fires when an attempt to confirm a gossip choice is canceled
+GOSSIP_ENTER_CODE | Fires when the player attempts a gossip choice which requires entering a code. Used for NPCs offering the ability to cla
+GOSSIP_SHOW | Fires when an NPC gossip interaction begins
+GUILD_EVENT_LOG_UPDATE | Fires when information for the guild event log becomes available
+GUILD_INVITE_CANCEL | Fires when an invitation to join a guild is no longer available. Can occur when the player declines an invitation or whe
+GUILD_INVITE_REQUEST | Fires when the player is invited to join a guild
+GUILD_MOTD | Fires when the guild message of the day is updated. Also fires during the login process so that the player can see the e
+GUILD_REGISTRAR_CLOSED | Fires when the player ends interaction with a guild registrar
+GUILD_REGISTRAR_SHOW | Fires when the player begins interaction with a guild registrar
+GUILD_ROSTER_UPDATE | Fires when new information about the contents of the guild roster is available
+GUILDBANK_ITEM_LOCK_CHANGED | Fires when an item in the guild bank is locked for moving or unlocked afterward
+GUILDBANK_TEXT_CHANGED | Fires when the text associated with a guild bank tab is changed
+GUILDBANK_UPDATE_MONEY | Fires when the amount of money in the guild bank changes
+GUILDBANK_UPDATE_TABS | Fires when information about guild bank tabs becomes available
+GUILDBANK_UPDATE_TEXT | Fires when text associated with a guild bank tab becomes available
+GUILDBANK_UPDATE_WITHDRAWMONEY | Fires when the amount of money the player can withdraw from the guild bank changes. Also fires when the player deposits 
+GUILDBANKBAGSLOTS_CHANGED | Fires when information about the contents of guild bank item slots changes or becomes available
+GUILDBANKFRAME_CLOSED | Fires when the player ends interaction with the guild bank
+GUILDBANKFRAME_OPENED | Fires when the player begins interaction with the guild bank
+GUILDBANKLOG_UPDATE | Fires when information for the guild bank transaction or money log becomes available
+GUILDTABARD_UPDATE | Fires when the player's guild tabard design changes.
+IGNORELIST_UPDATE | Fires when the content of the player's ignore list becomes available or changes
+IGR_BILLING_NAG_DIALOG | Fires when a message should be shown about the player's paid-per-hour game time expiring soon. Only used in locales wher
+INSPECT_ACHIEVEMENT_READY | Fires after the player attempts to compare achievements with another character, indicating that achievement information 
+INSPECT_HONOR_UPDATE | Fires when information about the inspected unit's PvP activities becomes available
+INSPECT_TALENT_READY | Fires when information about the inspected player's talents becomes available
+INSTANCE_BOOT_START | Fires when the player will soon be ejected from an instance. Occurs when the player leaves the group to which the instan
+INSTANCE_BOOT_STOP | Fires when the warning countdown for ejecting the player from an instance is canceled. The player can avoid being ejecte
+INSTANCE_ENCOUNTER_ENGAGE_UNIT | Fires when a boss has been engaged in an instance. Does not fire for every boss fights, as it is used to add the boss un
+INSTANCE_LOCK_START | Fires when the player will soon be saved to an instance. If the player enters an instance to which other group members a
+INSTANCE_LOCK_STOP | Fires when the warning countdown for saving the player to an instance is canceled. The countdown is stopped when the pla
+ITEM_LOCK_CHANGED | Fires when an item in the player's bags or equipped inventory is locked for moving or unlocked afterward
+ITEM_LOCKED | Fires when an item in the player's bags or equipped inventory is locked for moving
+ITEM_PUSH | Fires when the player receives an item. This event fires in addition to others which may indicate the item's origin (e.g
+ITEM_TEXT_BEGIN | Fires when the player begins interaction with a readable item or world object. Readable items include books, scrolls, an
+ITEM_TEXT_CLOSED | Fires when the player ends interaction with a readable item or world object. Readable items include books, scrolls, and 
+ITEM_TEXT_READY | Fires when text changes or becomes available for the readable item or world object with which the player is interacting.
+ITEM_TEXT_TRANSLATION | Fires when a "translation" progress bar should be displayed while the player interacts with a readable item or world obj
+ITEM_UNLOCKED | Fires when an item in the player's bags or equipped inventory is unlocked after moving
+KNOWLEDGE_BASE_ARTICLE_LOAD_FAILURE | Fires when a knowledge base article fails to load
+KNOWLEDGE_BASE_ARTICLE_LOAD_SUCCESS | Fires when the contents of a successfully loaded knowledge base article become available
+KNOWLEDGE_BASE_QUERY_LOAD_FAILURE | Fires when a knowledge base query fails
+KNOWLEDGE_BASE_QUERY_LOAD_SUCCESS | Fires when results of a successful knowledge base query become available
+KNOWLEDGE_BASE_SERVER_MESSAGE | Fires when the knowledge base server message changes or becomes available
+KNOWLEDGE_BASE_SETUP_LOAD_FAILURE | Fires when the knowledge base's default listing fails to load
+KNOWLEDGE_BASE_SETUP_LOAD_SUCCESS | Fires when the knowledge base's default listing becomes available
+KNOWLEDGE_BASE_SYSTEM_MOTD_UPDATED | Fires when the knowledge base system's message of the day changes or becomes available
+KNOWN_TITLES_UPDATE | Fires when the number of titles available to the player changes
+LANGUAGE_LIST_CHANGED | Fires when the list of known languages changes.
+LEARNED_SPELL_IN_TAB | Fires when a spell is learned inside of a given spell book tab, including when spells are learned upon changing the acti
+LEVEL_GRANT_PROPOSED | Fires when the player is offered to instantly gain a level thanks to a Recruit-A-Friend partner
+LFG_COMPLETION_REWARD | Fires when the player receives the completion reward for a randoms LFG dungeon
+LFG_LOCK_INFO_RECEIVED | Fires when LFR information is available. Fires when LFR boss kill information is available to be queried using GetLFGDun
+LFG_PROPOSAL_SHOW | Fires when the LFD system has found a possible group. Fires when the LFD system has found a possible group, and is seeki
+LFG_PROPOSAL_SUCCEEDED | Fires when an LFD group was successfully formed. Fires when an LFD group was successfully formed and the party is being 
+LFG_PROPOSAL_UPDATE | Fires when a potential group member accepts or declines the LFD offer. Fires when a potential group member accepts or de
+LFG_UPDATE | Fires when information about the player's LFG system settings changes or becomes available
+LFG_UPDATE_RANDOM_INFO | Fires when instance information is available for populating the LFD frame
+LOCALPLAYER_PET_RENAMED | Fires when the player's pet is renamed. Primarily applies to hunter pets.
+LOGOUT_CANCEL | Fires when the logout countdown is aborted. The player is required to wait several seconds before logging out or quittin
+LOOT_BIND_CONFIRM | Fires when the player attempts to loot a Bind on Pickup item
+LOOT_CLOSED | Fires when the player ends interaction with a lootable corpse or object. Fires regardless of whether looting ended by cl
+LOOT_OPENED | Fires when the player begins interaction with a lootable corpse or object
+LOOT_SLOT_CLEARED | Fires when the contents of a loot slot are removed. Can fire due to the player looting the slot's contents or due to the
+MACRO_ACTION_BLOCKED | Fires when a macro script attempts to use a protected API
+MACRO_ACTION_FORBIDDEN | Fires when a macro script attempts to use a protected API
+MAIL_CLOSED | Fires when the player ends interaction with a mailbox
+MAIL_FAILED | Fires when an outgoing mail message fails to send. Can occur when the player attempts to send mail to an unknown recipie
+MAIL_INBOX_UPDATE | Fires when information about the contents of the player's inbox changes or becomes available
+MAIL_SEND_INFO_UPDATE | Fires when information about the outgoing mail message's attachments changes
+MAIL_SEND_SUCCESS | Fires when an outgoing message is successfully sent
+MAIL_SHOW | Fires when the player begins interaction with a mailbox
+MERCHANT_CLOSED | Fires when the player ends interaction with a vendor
+MERCHANT_SHOW | Fires when the player begins interaction with a vendor
+MERCHANT_UPDATE | Fires when information about a vendor's available items changes or becomes available. This event is most meaningful when
+MINIGAME_UPDATE | Unused. Minigames are not implemented in the current version of the WoW client.
+MINIMAP_PING | Fires when the player or a group member "pings" a point on the minimap to share its location with the group
+MINIMAP_UPDATE_TRACKING | Fires when the player's currently active tracking ability changes. Applies to both tracking spells (such as a hunter's T
+MINIMAP_UPDATE_ZOOM | Fires when the minimap zoom type changes. The client stores separate zoom level settings for both indoor and outdoor are
+MIRROR_TIMER_PAUSE | Fires when a special countdown timer is paused. Mirror timers are used for breath and fatigue when swimming and for the 
+MIRROR_TIMER_START | Fires when a special countdown timer starts. Mirror timers are used for breath and fatigue when swimming and for the hun
+MIRROR_TIMER_STOP | Fires when a special countdown timer stops. Mirror timers are used for breath and fatigue when swimming and for the hunt
+MODIFIER_STATE_CHANGED | Fires when a modifier key is pressed or released.
+MOVIE_COMPRESSING_PROGRESS | Fires when compression of a movie recording starts
+MOVIE_RECORDING_PROGRESS | Fires when movie recording starts
+MOVIE_UNCOMPRESSED_MOVIE | Fires when the client prompts the player to allow compression of a movie recording
+MUTELIST_UPDATE | Fires when the content of the player's muted list becomes available or changes
+NEW_AUCTION_UPDATE | Fires when the content of the auction house's Create Auction item slot changes
+NEW_TITLE_EARNED | Fires when the player earns a new title
+NPC_PVPQUEUE_ANYWHERE | Fires when the player begins interaction with an NPC which can queue the player for any battleground
+OLD_TITLE_LOST | Fires when one of the player's titles is no longer available
+OPEN_MASTER_LOOT_LIST | Fires when the list of master loot candidates becomes available
+PARTY_CONVERTED_TO_RAID | Fires when the player's party becomes a raid group
+PARTY_INVITE_CANCEL | Fires when a pending invitation to join a group is no longer available
+PARTY_INVITE_REQUEST | Fires when the player is invited to join a group
+PARTY_LEADER_CHANGED | Fires when information about the leadership of the player's party changes or becomes available
+PARTY_LOOT_METHOD_CHANGED | Fires when information about the loot rules for the player's party changes or becomes available
+PARTY_MEMBER_DISABLE | Fires when a party member goes offline
+PARTY_MEMBER_ENABLE | Fires when an offline party member comes back online
+PARTY_MEMBERS_CHANGED | Fires when information about the membership of the player's party changes or becomes available
+PET_ATTACK_START | Fires when the player's pet starts auto-attacking
+PET_ATTACK_STOP | Fires when the player's pet stops auto-attacking
+PET_BAR_HIDE | Fires when the pet action bar should be hidden. Does not fire in all cases where the default UI automatically hides the 
+PET_BAR_HIDEGRID | Fires when a pet ability is removed from the cursor. In the default UI, this event causes the grid of empty pet action b
+PET_BAR_SHOWGRID | Fires when a pet ability is picked up onto the cursor. In the default UI, this event causes the grid of empty pet action
+PET_BAR_UPDATE | Fires when information about the content of the pet action bar changes or becomes available
+PET_BAR_UPDATE_COOLDOWN | Fires when the cooldown begins or ends for an ability on the pet action bar
+PET_DISMISS_START | Fires when the player's pet is dismissed. Applies to warlock minions, mind controlled units, quest-related pets, etc., b
+PET_FORCE_NAME_DECLENSION | Fires when the player is prompted to provide Russian declensions for a pet's name. Only applies in the Russian client.
+PET_RENAMEABLE | Fires when the player is prompted to rename a pet which has been renamed before. A hunter's pet can normally only be nam
+PET_STABLE_CLOSED | Fires when the player ends interaction with the pet stables
+PET_STABLE_SHOW | Fires when the player begins interaction with the pet stables
+PET_STABLE_UPDATE | Fires when information about the pet stables' content changes or becomes available
+PET_STABLE_UPDATE_PAPERDOLL | Fires when information about 3D models used in the pet stables becomes available. Generally, this information is availab
+PET_TALENT_UPDATE | Fires when the player's pet talent information changes - that is, when the pet is summoned, dismissed, gains or spends t
+PET_UI_CLOSE | Fires when information about the player's pet is no longer available. Used in the default UI to determine whether the Pe
+PET_UI_UPDATE | Fires when information about the player's pet changes or becomes available
+PETITION_CLOSED | Fires when the player ends interaction with a guild or arena team charter
+PETITION_SHOW | Fires when a guild or arena team charter is presented to the player
+PETITION_VENDOR_CLOSED | Fires when the player ends interaction with an arena registrar
+PETITION_VENDOR_SHOW | Fires when the player begins interaction with an arena registrar
+PETITION_VENDOR_UPDATE | Fires when information about available options at an arena registrar becomes available
+PLAY_MOVIE | Fires when an in-game movie should be played. Currently used only for the video in the Wrathgate quest event.
+PLAYER_ALIVE | Fires when the player's spirit is released after death or when the player accepts a resurrection without releasing
+PLAYER_AURAS_CHANGED | Fires when the player gains or loses a buff or debuff. Removed in patch 3.02. Use `UNIT_AURA` instead.
+PLAYER_CAMPING | Fires when the player attempts to log out while not in a major city, inn, or other "resting" area
+PLAYER_CONTROL_GAINED | Fires when the player regains control of his or her character. Occurs when a fear, mind control, or similar effect wears
+PLAYER_CONTROL_LOST | Fires when the player loses control of his or her character. Occurs when the player is afflicted by a fear, mind control
+PLAYER_DAMAGE_DONE_MODS | Fires when an effect changes the player's spell bonus damage
+PLAYER_DEAD | Fires when the player dies
+PLAYER_ENTER_COMBAT | Fires when the player begins melee auto-attack mode. This event cannot be used to detect when the player is entering a c
+PLAYER_ENTERING_BATTLEGROUND | Fires when the player enters a battleground instance. Otherwise equivalent to `PLAYER_ENTERING_WORLD`.
+PLAYER_ENTERING_WORLD | Fired when the player enters the world, reloads the UI, enters/leaves an instance or battleground, or respawns at a grav
+PLAYER_EQUIPMENT_CHANGED | Fires when the player equips or unequips an item
+PLAYER_FARSIGHT_FOCUS_CHANGED | Fires when the player's viewpoint changes. Examples include spells such as Far Sight, Mind Vision, Eye of Kilrogg and va
+PLAYER_FLAGS_CHANGED | Fires when a unit's AFK or DND status changes
+PLAYER_FOCUS_CHANGED | Fires when the player's focus unit changes
+PLAYER_GAINS_VEHICLE_DATA | Fires when the player gains vehicle-related attributes without necessarily entering a vehicle. This can occur when the p
+PLAYER_GUILD_UPDATE | Fires when information about the player's guild membership changes
+PLAYER_LEAVE_COMBAT | Fires when the player stops melee auto-attack mode. This event cannot be used to detect when the player is exiting a com
+PLAYER_LEAVING_WORLD | Fires when the player logs out or exits a world area. Can occur when leaving an instance or leaving one continent (or ot
+PLAYER_LEVEL_UP | Fires when the player gains a character level. Ding!
+PLAYER_LOGIN | Fires immediately before `PLAYER_ENTERING_WORLD` on login and UI reload. But unlike `PLAYER_ENTERING_WORLD`, this event 
+PLAYER_LOGOUT | Fires immediately before the player is logged out of the game. Unlike `PLAYER_LEAVING_WORLD`, this event only fires upon
+PLAYER_LOSES_VEHICLE_DATA | Fires when the player loses vehicle-related attributes without necessarily having been in a vehicle. This can occur when
+PLAYER_PVP_KILLS_CHANGED | Fires whenever a player's number of Honorable Kills changes
+PLAYER_PVP_RANK_CHANGED | Fires when the player's PvP rank changes. Related to the old PvP rewards system from before WoW Patch 2.0; no longer use
+PLAYER_QUITING | Fires when the player attempts to exit WoW while not in a major city, inn, or other "resting" area
+PLAYER_REGEN_DISABLED | Fires when the player enters combat status. When in combat, normal health and mana regeneration is disabled.
+PLAYER_REGEN_ENABLED | Fires when the player leaves combat status. When in combat, normal health and mana regeneration is disabled.
+PLAYER_SKINNED | Fires when another character takes the insignia from the player's corpse in a battleground or world PvP zone. The player
+PLAYER_TALENT_UPDATE | Fires when the player gains or spends talent points
+PLAYER_TARGET_CHANGED | Fires when the player changes targets
+PLAYER_TOTEM_UPDATE | Fires when information about the player's placed totems changes or becomes available. Also used for ghouls summoned by a
+PLAYER_TRADE_MONEY | Fires when the amount of money offered for trade by the player changes
+PLAYER_UNGHOST | Fires when a player resurrects after being in spirit form
+PLAYER_UPDATE_RESTING | Fires when the player enters or leaves a major city, inn or other "resting" area
+PLAYERBANKBAGSLOTS_CHANGED | Fires when the number of bank bag slots purchased by the player changes
+PLAYERBANKSLOTS_CHANGED | Fires when the contents of a bank slot or bank bag slot are changed
+PLAYTIME_CHANGED | Fires when changes to the player's limited play time status take effect. Only used in locales where the length of play s
+PREVIEW_PET_TALENT_POINTS_CHANGED | Fires when pet talent points are spent or unspent in preview mode
+PREVIEW_TALENT_POINTS_CHANGED | Fires when the player spends or unspends talent points in preview mode
+PVPQUEUE_ANYWHERE_SHOW | Fires when the player begins interacting with the UI feature allowing battleground queueing from any location
+PVPQUEUE_ANYWHERE_UPDATE_AVAILABLE | Fires when information for the any-battleground queueing UI changes or becomes available
+QUEST_ACCEPT_CONFIRM | Fires when certain kinds of quests (e.g. NPC escort quests) are started by another member of the player's group
+QUEST_ACCEPTED | Fires when a new quest is added to the player's quest log (which is what happens after a player accepts a quest).
+QUEST_COMPLETE | Fires when the player is looking at the "Complete" page for a quest, at a questgiver.. This is the portion of a questgiv
+QUEST_DETAIL | Fires when details of an available quest are presented by a questgiver. Fires for the portion of a questgiver dialog in 
+QUEST_FINISHED | Fires when the player ends interaction with a questgiver or ends a stage of the questgiver dialog. A typical dialogue wi
+QUEST_GREETING | Fires when a questgiver presents a greeting along with a list of active or available quests. Used only for a few questgi
+QUEST_ITEM_UPDATE | Fires when information about items in a questgiver dialog is updated. Only fires if information about quest items is ret
+QUEST_LOG_UPDATE | Fires when the game client receives updates relating to the player's quest log (this event is not just related to the qu
+QUEST_PROGRESS | Fires when interacting with a questgiver about an active quest. This is the portion of a questgiver dialog in which the 
+QUEST_QUERY_COMPLETE | Fires when quest completion information is available from the server. This event fires in response to a call to the Quer
+QUEST_WATCH_UPDATE | Fires when the player's status regarding a quest's objectives changes, for instance picking up a required object or kill
+RAID_INSTANCE_WELCOME | Fires when the player enters an instance that has a reset timer
+RAID_ROSTER_UPDATE | Fires when the raid roster changes. This occurs when a raid is formed or disbanded, if members join or leave or are move
+RAID_TARGET_UPDATE | Fires when raid target icons are assigned or cleared
+RAISED_AS_GHOUL | Fires when the player is raised as a ghoul by a friendly death knight
+READY_CHECK | Fires when a ready check is triggered
+READY_CHECK_CONFIRM | Fires when a unit responds to a ready check
+READY_CHECK_FINISHED | Fires when a ready check ends
+REPLACE_ENCHANT | Fires when the player attempts to enchant an item which is already enchanted
+RESURRECT_REQUEST | Fires when another character offers to resurrect the player
+RUNE_POWER_UPDATE | Fires when the availability of one of the player's rune resources changes
+RUNE_TYPE_UPDATE | Fires when the type of one of the player's rune resources changes
+SCREENSHOT_FAILED | Fires if an attempt to take a screenshot fails
+SCREENSHOT_SUCCEEDED | Fires when a screenshot is successfully taken
+SEND_MAIL_COD_CHANGED | Fires when the Cash On Delivery cost assigned for the outgoing mail message changes
+SEND_MAIL_MONEY_CHANGED | Fires when the amount of money attached to the outgoing mail message changes
+SKILL_LINES_CHANGED | Fires when the content of the player's skill list changes. Applies only to major changes to the list -- e.g. learning a 
+SOCKET_INFO_CLOSE | Fires when the player ends interaction with the item socketing UI
+SOCKET_INFO_UPDATE | Fires when information about the contents of the item socketing UI changes or becomes available
+SOUND_DEVICE_UPDATE | Fires when information about sound input/output devices changes or becomes available
+SPELL_UPDATE_COOLDOWN | Fires when the cooldown on one of the player's spells begins or ends. Only fires while something is being cast (i.e. beg
+SPELL_UPDATE_USABLE | Fires when a spell becomes usable or unusable. Includes when spells become unusable due to the global cooldown.
+SPELLS_CHANGED | Fires when information about the contents of the player's spellbook changes or becomes available. Applies to both new co
+START_AUTOREPEAT_SPELL | Fires when the player casts a spell which automatically repeats. Used by (for example) Shoot for wand users.
+START_LOOT_ROLL | Fires when an item becomes available for group loot rolling
+START_MINIGAME | Unused. Minigames are not implemented in the current version of the WoW client.
+STOP_AUTOREPEAT_SPELL | Fires when the player stops repetition of an automatically repeating spell. Used by (for example) Shoot for wand users.
+SYNCHRONIZE_SETTINGS | Fires when game options are manually synchronized with those saved on the server
+TABARD_CANSAVE_CHANGED | Fires when information about the player's ability to save a guild tabard design changes or becomes available
+TABARD_SAVE_PENDING | Fires when the player attempts to save a guild tabard design
+TALENTS_INVOLUNTARILY_RESET | Fires when the player's talents have undergone a forced reset. This usually happens after a major patch or on test realm
+TAXIMAP_CLOSED | Fires when the player begins interaction with a flight master
+TAXIMAP_OPENED | Fires when the player ends interaction with a flight master
+TIME_PLAYED_MSG | Fires when information about the player's total time played becomes available. Such information is normally requested vi
+TRACKED_ACHIEVEMENT_UPDATE | Fires when the player's progress changes on an achievement marked for watching in the objectives tracker
+TRADE_ACCEPT_UPDATE | Fires when the player or trade target signals acceptance (or cancels acceptance) of the trade
+TRADE_CLOSED | Fires when a trade with another player ends or is canceled
+TRADE_MONEY_CHANGED | Fires when the amount of money offered by the trade target changes
+TRADE_PLAYER_ITEM_CHANGED | Fires when the set of items offered for trade by the player changes
+TRADE_REPLACE_ENCHANT | Fires if the player attempts to enchant an item offered by the trade target which is already enchanted
+TRADE_REQUEST | Unused. Was once used for presenting the player with a confirmation dialog before initiating a trade offered by another 
+TRADE_REQUEST_CANCEL | Unused. Was once used for canceling a confirmation dialog which would appear before initiating a trade offered by anothe
+TRADE_SHOW | Fires when a trade interaction with another character begins
+TRADE_SKILL_CLOSE | Fires when the player ends interaction with a trade skill recipe list
+TRADE_SKILL_FILTER_UPDATE | Fires when the search filter for a trade skill recipe list changes
+TRADE_SKILL_SHOW | Fires when the player begins interaction with a trade skill recipe list
+TRADE_SKILL_UPDATE | Fires when information about the contents of a trade skill recipe list changes or becomes available
+TRADE_TARGET_ITEM_CHANGED | Fires when the set of items offered for trade by the target changes
+TRADE_UPDATE | Fires when new information becomes available about a trade process underway with another character. Not used for most ch
+TRAINER_CLOSED | Fires when the player ends interaction with a class or skill trainer
+TRAINER_DESCRIPTION_UPDATE | Fires when description information for the selected trainer service changes or becomes available
+TRAINER_SHOW | Fires when the player begins interaction with a class or skill trainer
+TRAINER_UPDATE | Fires when information about the contents of the trainer service list changes or becomes available
+TUTORIAL_TRIGGER | Fires when a contextual tutorial should be shown
+UI_ERROR_MESSAGE | Fires when a game error message should be displayed. e.g. "You cannot attack that target", "Your pet is dead", "Your inv
+UI_INFO_MESSAGE | Fires when an informative message should be displayed. e.g. "No fish are hooked", "You must be at least level 80 and in 
+UNIT_ATTACK | Fires when a unit's weapon (or standard melee attack damage) changes
+UNIT_ATTACK_POWER | Fires when a unit's attack power changes
+UNIT_ATTACK_SPEED | Fires when a unit's attack speed changes
+UNIT_AURA | Fires when a unit loses or gains a buff or debuff.
+UNIT_CLASSIFICATION_CHANGED | Fires when a unit changes classification (e.g. if an elite unit becomes non-elite)
+UNIT_COMBAT | Fires when a unit takes or recovers from damage due to a combat effect
+UNIT_COMBO_POINTS | Fires when a unit scores combo points on its target
+UNIT_DAMAGE | Fires when a unit's weapon damage changes.
+UNIT_DEFENSE | Fires when a unit's defense changes.
+UNIT_DISPLAYPOWER | Fires when a unit's primary power type (e.g. rage, energy, mana) changes. Occurs when a druid shapeshifts as well as in 
+UNIT_DYNAMIC_FLAGS | Fires when certain unit attributes change. Attribute changes covered by this event include `UnitIsCorpse()` and `UnitIsT
+UNIT_ENTERED_VEHICLE | Fires when a unit has entered a vehicle
+UNIT_ENTERING_VEHICLE | Fires when a unit begins entering a vehicle. See `UNIT_ENTERED_VEHICLE` for when the vehicle boarding animation finishes
+UNIT_EXITED_VEHICLE | Fires when a unit has exited a vehicle
+UNIT_EXITING_VEHICLE | Fires when a unit begins exiting a vehicle. See `UNIT_EXITED_VEHICLE` for when the vehicle exiting animation finishes.
+UNIT_FACTION | Fires when a unit's PvP status changes
+UNIT_FLAGS | Fires when certain combat statuses for a unit change (e.g. stunned, feared)
+UNIT_HEALTH | Fires when a unit's health level changes
+UNIT_INVENTORY_CHANGED | Fires when the player (or inspected unit) equips or unequips items
+UNIT_LEVEL | Fires when a unit's character level changes
+UNIT_MANA | Fires when a unit's mana level changes
+UNIT_MAXHEALTH | Fires when a unit's maximum health changes
+UNIT_MODEL_CHANGED | Fires when a unit's 3D model changes (e.g. due to shapeshifting, being polymorphed, or equipping gear)
+UNIT_NAME_UPDATE | Fires when a unit's name is changed. Also fires when the client is first notified of a unit's name.
+UNIT_PORTRAIT_UPDATE | Fires when a unit's portrait changes (e.g. due to shapeshifting, being polymorphed, or equipping gear). Also fires when 
+UNIT_QUEST_LOG_CHANGED | Fires when a unit's quests change (accepted/objective progress/abandoned/completed). This event will trigger both for yo
+UNIT_RAGE | Fires when a unit's rage level changes
+UNIT_RANGED_ATTACK_POWER | Fires when a unit's ranged attack power changes
+UNIT_RANGEDDAMAGE | Fires when a unit's ranged attack damage changes. Also fires when a unit's ranged attack speed changes.
+UNIT_RESISTANCES | Fires when a unit's magic resistances change. Also seems to fire when a unit's armor value changes.
+UNIT_SPELLCAST_CHANNEL_START | Fires when a unit starts channeling a spell
+UNIT_SPELLCAST_CHANNEL_STOP | Fires when a unit stops or cancels a channeled spell
+UNIT_SPELLCAST_CHANNEL_UPDATE | Fires when a unit's channeled spell is interrupted or delayed
+UNIT_SPELLCAST_DELAYED | Fires when a unit's spell cast is delayed
+UNIT_SPELLCAST_FAILED | Fires when a unit's spell cast fails
+UNIT_SPELLCAST_FAILED_QUIET | Fires when a unit's spell cast fails and no error message should be displayed. The default UI displays an error message 
+UNIT_SPELLCAST_INTERRUPTED | Fires when a unit's spell cast is interrupted
+UNIT_SPELLCAST_INTERRUPTIBLE | Fires when a unit's spell cast becomes interruptible again
+UNIT_SPELLCAST_NOT_INTERRUPTIBLE | Fires when a unit's spell cast becomes uninterruptible
+UNIT_SPELLCAST_SENT | Fires when a request to cast a spell (on behalf of the player or a unit controlled by the player) is sent to the server
+UNIT_SPELLCAST_START | Fires when a unit begins casting a spell
+UNIT_SPELLCAST_STOP | Fires when a unit stops or cancels casting a spell
+UNIT_SPELLCAST_SUCCEEDED | Fires when a unit's spell cast succeeds
+UNIT_STATS | Fires when a unit's primary attributes change. Primary attributes are Strength, Stamina, Agility, Intellect, and Spirit.
+UNIT_TARGET | Fires when a unit's target changes.
+UNIT_THREAT_LIST_UPDATE | Fires when a non-player unit's threat list is updated
+UNIT_THREAT_SITUATION_UPDATE | Fires when a unit's threat state changes. Only fires when changes in the unit's general threat state (see `UnitThreatSit
+UPDATE_BATTLEFIELD_SCORE | Fires when information for the battleground scoreboard changes or becomes available
+UPDATE_BATTLEFIELD_STATUS | Fires when the player's status in a battleground or queue changes
+UPDATE_BINDINGS | Fires when information about the player's key binding settings changes or becomes available
+UPDATE_BONUS_ACTIONBAR | Fires when information about the bonus action bar changes or becomes available. The bonus action bar is used for state-d
+UPDATE_CHAT_COLOR | Fires when the color settings for chat message types are updated
+UPDATE_CHAT_COLOR_NAME_BY_CLASS | Fires when settings for per-class color-coding of character names in chat are updated
+UPDATE_CHAT_WINDOWS | Fires when saved chat window settings are loaded
+UPDATE_EXHAUSTION | Fires when the player's rest state or amount of rested XP changes
+UPDATE_FACTION | Fires when the contents of the reputation listing change or become available. Fires both for changes to the listing as d
+UPDATE_FLOATING_CHAT_WINDOWS | Fires when chat window layout should be updated
+UPDATE_GM_STATUS | Fires when the player's GM ticket status (or ability to submit tickets) changes
+UPDATE_INSTANCE_INFO | Fires when information about instances to which the player is saved changes or becomes available
+UPDATE_INVENTORY_ALERTS | Fires when an equipped item's durability alert status changes. Only fires for changes affecting durability alert status 
+UPDATE_INVENTORY_DURABILITY | Fires when an equipped item's durability changes
+UPDATE_LFG_LIST | Fires when results of a Looking for More query become available
+UPDATE_LFG_LIST_INCREMENTAL | Fires when results of a Looking for More query are updated
+UPDATE_LFG_TYPES | Fires when information about possible Looking for Group settings changes or becomes available
+UPDATE_MACROS | Fires when information about the player's macros changes or becomes available
+UPDATE_MASTER_LOOT_LIST | Fires when the contents of the master loot candidate list change or become available
+UPDATE_MOUSEOVER_UNIT | Fires when the mouse cursor moves over a visible unit. Fires both when mousing over units in the 3D world or when mousin
+UPDATE_MULTI_CAST_ACTIONBAR | Fires when the contents of the multi-cast action bar change or become available. This action bar is currently used only 
+UPDATE_PENDING_MAIL | Fires when information about newly received mail messages (not yet seen at a mailbox) becomes available
+UPDATE_SHAPESHIFT_COOLDOWN | Fires when the cooldown begins or ends for an action on the stance/shapeshift bar
+UPDATE_SHAPESHIFT_FORMS | Fires when the contents of the stance/shapeshift bar change or become available
+UPDATE_SHAPESHIFT_USABLE | Fires when an ability on the stance/shapeshift bar becomes usable or unusable. For example, the availability of druid aq
+UPDATE_STEALTH | Fires when the player uses or cancels a stealth ability
+UPDATE_TICKET | Fires when information about an active GM ticket changes or becomes available
+UPDATE_TRADESKILL_RECAST | Fires for each cast when performing multiple casts of a trade skill recipe. Fires before each cast and when casting is c
+UPDATE_WORLD_STATES | Fires when information for world state UI elements changes or becomes available. World State UI elements include PvP, in
+USE_BIND_CONFIRM | Fires when the player attempts to use an item which will become soulbound in the process
+USE_GLYPH | Fires when the player begins to use a glyph. In the default UI, this event causes the glyph interface to open when the p
+VARIABLES_LOADED | Fires when non-addon-specific saved variables are loaded. Addons should generally use `ADDON_LOADED` to determine whethe
+VEHICLE_ANGLE_SHOW | Fires when controls for vehicle weapon pitch should be displayed
+VEHICLE_ANGLE_UPDATE | Fires when the player's vehicle weapon pitch changes
+VEHICLE_PASSENGERS_CHANGED | Fires when the list of passengers in the player's vehicle changes
+VEHICLE_POWER_SHOW | Fires when controls for vehicle weapon power should be displayed
+VEHICLE_UPDATE | Fires when information about the player's vehicle changes or becomes available
+VOICE_CHANNEL_STATUS_UPDATE | Fires when voice-related status of a chat channel changes
+VOICE_CHAT_ENABLED_UPDATE | Fires when the client's voice chat feature is enabled or disabled
+VOICE_LEFT_SESSION | Fires when a voice-enabled member leaves a chat channel
+VOICE_PLATE_START | Fires when a channel member begins speaking in voice chat
+VOICE_PLATE_STOP | Fires when a channel member finishes speaking in voice chat
+VOICE_PUSH_TO_TALK_START | Fires when the "Push to Talk" key binding is activated
+VOICE_PUSH_TO_TALK_STOP | Fires when the "Push to Talk" key binding is deactivated
+VOICE_SELF_MUTE | Fires when the player's self mute setting changes
+VOICE_SESSIONS_UPDATE | Fires when information about a voice chat session changes or becomes available
+VOICE_START | Fires when a channel member begins speaking in voice chat
+VOICE_STATUS_UPDATE | Fires when a member of the player's group changes voice chat status
+VOICE_STOP | Fires when a channel member finishes speaking in voice chat
+VOTE_KICK_REASON_NEEDED | Fires when the player attempts to vote-kick another player and the game requests a reason
+WEAR_EQUIPMENT_SET | Fires when the player's current equipment set changes. The firing of this event indicates the moment when the player's "
+WHO_LIST_UPDATE | Fires when results of a Who query become available. Only fires if there are more than three results or if `SetWhoToUI(1)
+WORLD_MAP_NAME_UPDATE | Fires when the name of the current world map area changes or becomes available
+WORLD_MAP_UPDATE | Fires when the contents of the world map change or become available
+WORLD_STATE_UI_TIMER_UPDATE | Fires when the state of a timer world state UI element changes or becomes available. World State UI elements include PvP
+WOW_MOUSE_NOT_FOUND | This event fires when a man buttoned WoW mouse is not found, in response to a `DetectWowMouse()` function call
+ZONE_CHANGED | Fires when the player moves between subzones or other named areas. Only fired if `ZONE_CHANGED_INDOORS` or `ZONE_CHANGED
+ZONE_CHANGED_INDOORS | Fires when the player moves between areas and the "indoors/outdoors" status may have changed
+ZONE_CHANGED_NEW_AREA | Fires when you change areas and its a major zone change, i.e. into or out of an instance or from stepping into major zon
