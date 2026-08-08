@@ -815,10 +815,14 @@ local function ReassertFlash()
         local btn = _G["ActionButton" .. i]
         if btn then
             local action = ResolveScatterAction(btn, i)
-            -- Red flash: auto-attack / auto-shot ONLY (user preference — the
-            -- red UI-QuickslotRed glow is not shown for spell casts; the
-            -- casting feedback is the checked-state ring below).
-            local flash = IsAttackAction(action) or IsAutoRepeatAction(action)
+            -- Red flash: auto-attack / auto-shot ONLY, and only while they are
+            -- actually active (user preference — the red UI-QuickslotRed glow
+            -- is not shown for spell casts). IsAttackAction/IsAutoRepeatAction
+            -- are SLOT-CONTENT checks (1 whenever the attack/auto-shot ability
+            -- is in the slot), so they must be ANDed with IsCurrentAction
+            -- (1 while the repeating action is actually repeating) — otherwise
+            -- the attack button glows red permanently.
+            local flash = IsCurrentAction(action) and (IsAttackAction(action) or IsAutoRepeatAction(action))
             local fl = _G[btn:GetName() .. "Flash"]
             if fl then
                 if flash then

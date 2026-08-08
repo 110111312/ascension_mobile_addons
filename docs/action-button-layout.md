@@ -212,9 +212,13 @@ cast events are unreliable on this server, so the `IsCurrentAction`-driven
 `stateflash` latched at 1 after a cast and the glow stuck forever. It
 recomputes from the attr-resolved action and `Show()/Hide()`s the Flash
 texture directly (plain texture region — taint-safe). Per user preference the
-red flash (`UI-QuickslotRed`) is **auto-attack / auto-shot only**
-(`IsAttackAction`/`IsAutoRepeatAction`) — it is NOT shown for spell casts
-(`IsCurrentAction`); the casting feedback is the checked-state ring below. It
+red flash (`UI-QuickslotRed`) is **auto-attack / auto-shot only, and only
+while actually active**: `IsCurrentAction(action) and (IsAttackAction(action)
+or IsAutoRepeatAction(action))`. The type checks are SLOT-CONTENT checks (1
+whenever the attack/auto-shot ability is in the slot), so they must be ANDed
+with `IsCurrentAction` (1 while the repeating action is actually repeating) —
+otherwise the attack button glows red permanently. It is NOT shown for spell
+casts; the casting feedback is the checked-state ring below. It
 also clears a **latched checked state**: the client checks the
 button while casting (the casting highlight) but the uncheck runs via the
 OnEvent-driven `ActionButton_UpdateState`, which is cleared at apply — so the
