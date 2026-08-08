@@ -152,25 +152,35 @@ slots even though the UI looked normal (display flip is pure Lua and kept
 working — hence "bar flips back but keys dead"). Fixes on the unstealth
 transition (bonus offset 1→0):
 
-- **Leave `BonusActionBarFrame` entirely to the client** — no addon
-  manipulation of any kind. `BonusActionBarFrame` is a **child of
+- **Hide `BonusActionBarFrame` via a secure state driver registered directly
+  on the frame** — the client's own `HideBonusActionBar()` is ~3s late on
+  this client (stock slide path gated on `MainMenuBar.busy`). During that
+  window the bar stays shown and its stock buttons overlap the bottom-right
+  arc, stealing clicks: they resolve to the stealth slots (73–84), which are
+  unusable out of stealth (`you can't do that yet`) even though the arc
+  display (attribute-driven) already shows the normal bar. So the addon hides
+  it at the unstealth moment. `BonusActionBarFrame` is a **child of
   `MainMenuBar`, which is a protected frame — so `BonusActionBarFrame` is
-  protected too**. Every attempt to hide it from the addon tainted it on this
-  client and blocked the client's own secure `HideBonusActionBar()`:
+  protected too**. Every earlier attempt to hide it tainted it on this client
+  and blocked the client's own secure calls on it:
   - addon-context `Hide()` (the original layout-guard approach) →
     `AddOn 'MobileUI' prevented the call of the secure function
     'BonusActionBarFrame:Hide()'`;
   - a state-driver snippet on an addon-created handler that called methods on
     a frame obtained via `self:GetParent()` → `prevented the call of the
     secure function 'UNKNOWN()'`;
-  - a state driver registered directly on the frame with a `self`-referencing
-    snippet → `UNKNOWN()` again.
-  The client's own `HideBonusActionBar()` **does fire on unstealth** (the
-  blocked-call errors above prove it — the calls were only blocked because the
-  frame was tainted). With zero addon touch, it hides the bar itself, keys
-  route back to the normal bar, and there is no taint. The unstealth branch in
-  the guard poll keeps only `ChangeActionBarPage(1)` (see below) and the
-  `bonusShown` diagnostic read (`IsShown()` is read-only, safe).
+  - a driver on the frame with a `self:Hide()`/`self:Show()` snippet →
+    `UNKNOWN()` again.
+  The current driver is the pure flip-bridge pattern: `RegisterStateDriver`
+  directly on `BonusActionBarFrame` (snippet `self` is the frame itself, the
+  same self-reference the client's own handlers use) with a snippet that uses
+  **only** `self:SetShown` + the marker `self:SetAttribute` — the ops the
+  flip bridge proves clean on this client. Condition `[bonusbar:0] → hidden,
+  else → shown` re-evaluates on events + the 0.2s driver throttle, so
+  client re-shows at combat transitions are re-hidden without any addon
+  call on the frame. If the frame is not a `SecureHandlerStateTemplate`, the
+  driver is inert and self-cleans (the client's delayed hide is the only
+  hide) — the marker attribute distinguishes the two cases at install.
 - **`ChangeActionBarPage(1)`** on the same transition — empirically required
   for the in-combat unstealth display flip. The page never visibly moves and
   no event fires, but without it the bar froze on stealth skills when
