@@ -459,34 +459,19 @@ local function ApplyActionBar()
             if nm then nm:Hide() end
             if hotkey then HOTKEY_FRAMES[#HOTKEY_FRAMES+1] = hotkey end
             if nm then HOTKEY_FRAMES[#HOTKEY_FRAMES+1] = nm end
-            -- showgrid=1: the client's ActionButton_Update hides a button
-            -- whose cached action is empty (self:Hide() when showgrid==0).
-            -- Mid-combat that would hide scatter buttons (stale page-7
-            -- actions) and we can't Show them back (protected). With
-            -- showgrid=1 the Update hides the cooldown region instead, so
-            -- the button stays visible for our per-frame redraw.
-            -- flipLite: skip this — let the client manage grid normally.
-            if not (MobileDB and MobileDB.flipLite) then
-                pcall(function() btn:SetAttribute("showgrid", 1) end)
-            end
+            -- showgrid: left at the client default. We no longer force
+            -- showgrid=1 — the client manages button visibility normally
+            -- now that OnEvent is intact (no per-frame redraw to keep
+            -- buttons visible for).
             btn:SetScript("OnEnter", NoActionTooltipOnEnter)
-            -- Stop the client from dispatching this button's update events.
-            -- The client re-renders reparented buttons from their stale
-            -- self.action on UPDATE_SHAPESHIFT_FORM/combat events, and our
-            -- apply-time repositioning taints the (protected) button, so the
-            -- client's own self:Show()/self:Hide() inside ActionButton_Update
-            -- gets BLOCKED mid-combat ("AddOn 'MobileUI' prevented the call of
-            -- the secure function 'ActionButtonN:Show()'"). With no OnEvent
-            -- the client never touches the button: ApplyFlip (out of combat,
-            -- full stock update) and the per-frame combat redraw own the
-            -- display instead.
-            -- flipLite: leave OnEvent intact to test whether the taint (caused
-            -- by field writes since removed) is still present. If the client's
-            -- own Update renders correctly with no taint errors, the per-frame
-            -- combat redraw + showgrid + OnEvent-clearing are all deletable.
-            if not (MobileDB and MobileDB.flipLite) then
-                btn:SetScript("OnEvent", nil)
-            end
+            -- OnEvent: left intact. The client's own ActionButton_Update
+            -- resolves the action via the bridge's actionpage attribute and
+            -- renders icon/tint/cooldown/flash correctly. Confirmed in-game
+            -- (phase 3): with OnEvent intact and no field writes on the
+            -- secure buttons, there is NO taint — the taint that forced the
+            -- old OnEvent-clearing was caused by field writes (self.action /
+            -- isBonus) since removed. We no longer clear OnEvent or run a
+            -- per-frame combat redraw.
             MobileUI_Debug("  ActionButton" .. i .. " skinned")
         else
             MobileUI_Debug("  ActionButton" .. i .. " NOT FOUND")
@@ -836,94 +821,14 @@ function MobileUILayout.UninstallFlipBridge()
     end
 end
 
--- Per-frame combat display ownership. The client re-renders the buttons
--- from their stale self.action on UPDATE_SHAPESHIFT_FORM etc. (it cannot
--- be corrected without tainting field writes), so in combat we re-assert
--- the visible state every frame from the attr-resolved page: icon texture,
--- usability tints (out-of-mana blue, unusable gray — computed from the
--- CORRECT action, matching stock ActionButton_UpdateUsable), cooldown,
--- and the stock auto-attack flash (red blink every 0.4s while the action
--- is an attack). The buttons' own flash logic can't run: their OnEvent is
--- cleared (no UpdateFlash/StartFlash) and StartFlash would SetScript on
--- the protected button, so we replicate the blink here. All targets are
--- plain texture/cooldown regions — not protected — so no taint, no field
--- writes on the buttons. With showgrid=1 the client's Update never hides
--- the buttons themselves, so they stay visible for this redraw.
-local scatterFlash = {}  -- [btn] = { t = last-toggle time }
-local function RefreshScatterCombat()
-    local t = GetTime()
-    for i = 1, 10 do
-        local btn = _G["ActionButton" .. i]
-        if btn then
-            local action, icon = ResolveScatterAction(btn, i)
-            local tex = GetActionTexture(action)
-            if tex then
-                icon:SetTexture(tex)
-                icon:Show()
-                local isUsable, notEnoughMana = IsUsableAction(action)
-                if isUsable then
-                    icon:SetVertexColor(1.0, 1.0, 1.0)
-                elseif notEnoughMana then
-                    icon:SetVertexColor(0.5, 0.5, 1.0)
-                else
-                    icon:SetVertexColor(0.4, 0.4, 0.4)
-                end
-                local nt = _G[btn:GetName() .. "NormalTexture"]
-                if nt then
-                    if notEnoughMana then
-                        nt:SetVertexColor(0.5, 0.5, 1.0)
-                    else
-                        nt:SetVertexColor(1.0, 1.0, 1.0)
-                    end
-                end
-            else
-                icon:Hide()
-            end
-            local cd = _G[btn:GetName() .. "Cooldown"]
-            if cd then
-                local start, duration, enable = GetActionCooldown(action)
-                -- Only draw the spiral when the client says a cooldown UI
-                -- element should be shown (enable==1); duration>0 alone is
-                -- not sufficient (see GetActionCooldown in the API ref).
-                if start and duration and duration > 0 and enable == 1 then
-                    if cd.start ~= start or cd.duration ~= duration then
-                        cd:SetCooldown(start, duration)
-                        cd.start, cd.duration = start, duration
-                    end
-                    if not cd:IsShown() then cd:Show() end
-                else
-                    cd:Hide()
-                    cd.start, cd.duration = nil, nil
-                end
-            end
-            -- Stock action-button flash: red blink every 0.4s while the
-            -- (correct) action is an attack, an auto-repeat (Auto Shot/Shoot),
-            -- or currently being used. IsAttackAction alone misses hunters'
-            -- Auto Shot and wand users' Shoot (see IsAutoRepeatAction in the
-            -- API reference); IsCurrentAction covers in-progress casts.
-            -- State lives in a plain table — never write fields on the
-            -- secure button.
-            local flash = _G[btn:GetName() .. "Flash"]
-            if flash then
-                if IsAttackAction(action) or IsAutoRepeatAction(action) or IsCurrentAction(action) then
-                    local st = scatterFlash[btn]
-                    if not st then
-                        st = { t = t }
-                        scatterFlash[btn] = st
-                        flash:Show()
-                        flash:SetAlpha(1.0)
-                    elseif t - st.t >= 0.4 then
-                        st.t = t
-                        if flash:IsShown() then flash:Hide() else flash:Show() end
-                    end
-                else
-                    scatterFlash[btn] = nil
-                    if flash:IsShown() then flash:Hide() end
-                end
-            end
-        end
-    end
-end
+-- Per-frame combat display redraw REMOVED (phase 4): the client owns the
+-- scatter buttons' display now that their OnEvent is left intact. The
+-- SecureStateDriver bridge (above) writes the actionpage attribute in
+-- combat; the client's own ActionButton_Update (re-fired on
+-- UPDATE_BONUS_ACTIONBAR / UPDATE_SHAPESHIFT_FORM, confirmed firing on
+-- Ascension) resolves the correct action and renders icon/tint/cooldown/
+-- flash itself — including the auto-attack blink (IsAttackAction +
+-- IsAutoRepeatAction + IsCurrentAction, wider than our reimplementation).
 
 function MobileUILayout.ApplyFlip()
     if not MobileDB or not MobileDB.layoutEnabled then return end
@@ -971,19 +876,18 @@ function MobileUILayout.EnsureFlipWatcher()
     flipFrame:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN")
     flipFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
     flipFrame:SetScript("OnEvent", function(self, event, ...)
-        -- Combat-safe: ApplyFlip only sets attributes (secure channel) and
-        -- draws icon textures.
+        -- Combat-safe: ApplyFlip only draws icon textures (plain texture
+        -- regions, no secure/protected calls). The actionpage attribute is
+        -- owned by the SecureStateDriver bridge above, set independently of
+        -- this handler.
         MobileUI_Debug(string.format("Flip evt: %s off=%d page=%d combat=%d",
             event, GetBonusBarOffset() or 0, GetActionBarPage() or 1,
             InCombatLockdown() and 1 or 0))
         MobileUILayout.ApplyFlip()
-        -- In combat, overwrite any stale re-render the buttons just did in
-        -- this same dispatch (icons, un-gray, cooldown, flash). Out of
-        -- combat the client's own updates are correct — leave them alone.
-        -- flipLite: the client owns the display, so skip our redraw.
-        if InCombatLockdown() and not (MobileDB and MobileDB.flipLite) then
-            RefreshScatterCombat()
-        end
+        -- The client owns the scatter display (OnEvent intact): its own
+        -- ActionButton_Update re-renders on these events via the bridge's
+        -- actionpage attribute. ApplyFlip mirrors/logs the state; no
+        -- per-frame redraw is needed.
     end)
 end
 
@@ -1181,11 +1085,14 @@ local function ApplyHideFrames()
         guardFrame = CreateFrame("Frame")
         guardFrame:SetScript("OnUpdate", function(self, elapsed)
             if not MobileDB or not MobileDB.layoutEnabled then return end
-            -- Flip follower state check (0.25s throttle). The client may not
-            -- fire ACTIONBAR_PAGE_CHANGED/UPDATE_SHAPESHIFT_FORM, so poll
-            -- here — this OnUpdate is guaranteed to run every frame. State is
-            -- just the two signals the flip reads: the action-bar page and
-            -- the bonus-bar offset (this client's stance/stealth bar).
+            -- Flip state check (0.25s throttle). The stance/stealth events
+            -- (UPDATE_BONUS_ACTIONBAR / UPDATE_SHAPESHIFT_FORM) DO fire on
+            -- Ascension (confirmed in-game), so flip detection is event-driven
+            -- via flipFrame above. This poll is kept for the unstealth
+            -- BonusActionBarFrame-hide workaround below (an Ascension client
+            -- quirk: it never hides the bonus bar on unstealth, sticking
+            -- keys on stealth slots), which must run reliably even when the
+            -- event dispatch path is mid-flight.
             self._t = (self._t or 0) + elapsed
             if self._t >= 0.25 then
                 self._t = 0
@@ -1242,24 +1149,18 @@ local function ApplyHideFrames()
             -- stealth slots for the whole fight.
             local bf = BonusActionBarFrame
             if bf and bf:IsShown() and (GetBonusBarOffset() or 0) == 0 then bf:Hide() end
-            -- Combat: own the scatter display every frame. The client
-            -- re-renders these buttons from their stale self.action (can't
-            -- be fixed — field writes taint), so redraw icon/color/cooldown
-            -- from the attr-resolved page here. Everything below this line
-            -- Show()/Hide()s PROTECTED frames (the stock bars and bar
-            -- buttons): during combat lockdown those calls are blocked and
-            -- TAINT the frames — which then surfaces as "MobileUI tainted
-            -- the call of the secure function 'UseAction()'" on the next
-            -- button click. Pause that enforcement during combat; the stock
-            -- bar briefly showing is cosmetic, and full enforcement resumes
-            -- when combat ends. (The flip poll above is pure Lua and stays
-            -- active in combat.)
+            -- Everything below this line Show()/Hide()s PROTECTED frames (the
+            -- stock bars and bar buttons): during combat lockdown those calls
+            -- are blocked and TAINT the frames — which then surfaces as
+            -- "MobileUI tainted the call of the secure function 'UseAction()'"
+            -- on the next button click. Pause that enforcement during combat;
+            -- the stock bar briefly showing is cosmetic, and full enforcement
+            -- resumes when combat ends. (The flip poll above is pure Lua and
+            -- stays active in combat.)
             if InCombatLockdown() then
-                -- flipLite: the client owns the display, so skip our redraw;
-                -- keep the early return so we don't enforce HIDE_FRAMES mid-combat.
-                if not (MobileDB and MobileDB.flipLite) then
-                    RefreshScatterCombat()
-                end
+                -- The client owns the scatter display (OnEvent intact); no
+                -- per-frame redraw. Keep the early return so we don't enforce
+                -- HIDE_FRAMES on protected frames mid-combat.
                 return
             end
             for _, name in ipairs(HIDE_FRAMES) do
