@@ -20,6 +20,7 @@ local DEFAULTS = {
     layoutEnabled = true, -- true = apply the 5-point mobile layout revamp
     tapInteract  = true,  -- true = left click on world acts like right click (interact)
     tapSell      = true,  -- true = tap a bag item to sell while a vendor is open
+    tapBuy       = true,  -- true = tap a merchant item to buy it directly
     debug        = false, -- true = also print MobileUI_Debug entries to chat
 }
 
@@ -95,6 +96,9 @@ function core:PLAYER_ENTERING_WORLD()
     end
     if MobileDB.tapSell then
         MobileUISell:Apply()
+    end
+    if MobileDB.tapBuy then
+        MobileUIBuy:Apply()
     end
     if MobileDB.layoutEnabled then
         MobileUILayout:Apply()
@@ -196,14 +200,21 @@ SlashCmdList["MOBILEUI"] = function(msg)
             (enabled and "ON" or "OFF") ..
             " (tap a bag item to sell while a vendor is open).")
 
+    elseif cmd == "buy" then
+        local enabled = MobileUIBuy:Toggle()
+        print("|cff00ccff[MobileUI]|r Tap = Buy " ..
+            (enabled and "ON" or "OFF") ..
+            " (tap a merchant item to buy it directly).")
+
     else
         print("|cff00ccff[MobileUI]|r Scale: 1.2 (fixed; minimap 1.25)" ..
             " | chat: " .. (MobileDB.chatHidden and "hidden" or "shown") ..
             " | look: " .. tostring(MobileDB.lookSpeed or 90) ..
             " | layout: " .. (MobileDB.layoutEnabled and "on" or "off") ..
             " | tap: " .. (MobileDB.tapInteract and "on" or "off") ..
-            " | sell: " .. (MobileDB.tapSell and "on" or "off"))
-        print("|cff00ccff[MobileUI]|r Usage: /mui chat | /mui look <10-90> | /mui layout | /mui tap | /mui sell | /mui debug | /mui debugclear")
+            " | sell: " .. (MobileDB.tapSell and "on" or "off") ..
+            " | buy: " .. (MobileDB.tapBuy and "on" or "off"))
+        print("|cff00ccff[MobileUI]|r Usage: /mui chat | /mui look <10-90> | /mui layout | /mui tap | /mui sell | /mui buy | /mui debug | /mui debugclear")
     end
 end
 
@@ -221,6 +232,8 @@ function MobileUI_OptionsOnShow(panel)
     if tapCheck then tapCheck:SetChecked(MobileDB.tapInteract) end
     local sellCheck = _G[name .. "TapSellCheck"]
     if sellCheck then sellCheck:SetChecked(MobileDB.tapSell) end
+    local buyCheck = _G[name .. "TapBuyCheck"]
+    if buyCheck then buyCheck:SetChecked(MobileDB.tapBuy) end
     local debugCheck = _G[name .. "DebugCheck"]
     if debugCheck then debugCheck:SetChecked(MobileDB.debug) end
 end
@@ -258,6 +271,16 @@ function MobileUI_OptionsOnTapSellChanged(checked)
         MobileUISell:Apply()
     else
         MobileUISell:Revert()
+    end
+end
+
+function MobileUI_OptionsOnTapBuyChanged(checked)
+    if not MobileDB then return end
+    MobileDB.tapBuy = checked and true or false
+    if MobileDB.tapBuy then
+        MobileUIBuy:Apply()
+    else
+        MobileUIBuy:Revert()
     end
 end
 

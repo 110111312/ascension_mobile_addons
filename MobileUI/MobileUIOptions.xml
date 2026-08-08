@@ -103,9 +103,25 @@
                 </Scripts>
             </CheckButton>
 
-            <CheckButton name="$parentDebugCheck" inherits="OptionsCheckButtonTemplate">
+            <CheckButton name="$parentTapBuyCheck" inherits="OptionsCheckButtonTemplate">
                 <Anchors>
                     <Anchor point="TOPLEFT" relativeTo="$parentTapSellCheck" relativePoint="BOTTOMLEFT">
+                        <Offset><AbsDimension x="0" y="-8"/></Offset>
+                    </Anchor>
+                </Anchors>
+                <Scripts>
+                    <OnLoad>
+                        _G[self:GetName().."Text"]:SetText("Tap = Buy (tap a merchant item to buy it directly)")
+                    </OnLoad>
+                    <OnClick>
+                        MobileUI_OptionsOnTapBuyChanged(self:GetChecked())
+                    </OnClick>
+                </Scripts>
+            </CheckButton>
+
+            <CheckButton name="$parentDebugCheck" inherits="OptionsCheckButtonTemplate">
+                <Anchors>
+                    <Anchor point="TOPLEFT" relativeTo="$parentTapBuyCheck" relativePoint="BOTTOMLEFT">
                         <Offset><AbsDimension x="0" y="-8"/></Offset>
                     </Anchor>
                 </Anchors>
