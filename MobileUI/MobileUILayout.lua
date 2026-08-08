@@ -885,54 +885,60 @@ function MobileUILayout.UninstallFlipBridge()
 end
 
 -- BonusActionBarFrame hide driver (secure channel).
--- BonusActionBarFrame is a child of MainMenuBar, a PROTECTED frame, so it is
--- protected too — the old guard-poll bf:Hide() from addon context TAINTED it,
--- after which the client's own secure HideBonusActionBar() was blocked
--- mid-combat ("AddOn 'MobileUI' prevented the call of the secure function
--- 'BonusActionBarFrame:Hide()'"). Same pattern as the flip bridge: a
--- SecureHandlerStateTemplate frame of our own drives the visibility, and its
--- _onstate snippet calls Hide()/Show() from a SECURE context (state-driver
--- manager + restricted closure), which does not taint.
--- Condition: [bonusbar:0] -> hide (no bonus bar active), else -> show.
---
--- The handler is created as a CHILD of BonusActionBarFrame so the snippet can
--- reach the protected frame via self:GetParent() — restricted (secure) snippet
--- environments cannot index arbitrary globals (the first attempt referenced
--- BonusActionBarFrame by name and failed with "attempt to index global
--- 'BonusActionBarFrame' (a nil value)"; only whitelisted globals are visible
--- there, and frame methods on self always are).
+-- BonusActionBarFrame is a PROTECTED frame (a child of MainMenuBar). The old
+-- addon-context guard-poll bf:Hide() TAINTED it, after which the client's own
+-- secure HideBonusActionBar() was blocked mid-combat ("AddOn 'MobileUI'
+-- prevented the call of the secure function 'BonusActionBarFrame:Hide()'").
+-- Two attempts to hide it from an addon-created handler's restricted snippet
+-- also tainted: the snippet could not even index the 'BonusActionBarFrame'
+-- global (restricted envs only expose whitelisted globals), and calling
+-- methods on a frame obtained via self:GetParent() tainted it ("prevented the
+-- call of the secure function 'UNKNOWN()'").
+-- Fix: register the state driver DIRECTLY on BonusActionBarFrame so the
+-- snippet operates on SELF (the frame's own _onstate handler runs in a secure
+-- context with a trusted self reference — the client's own pattern):
+--   [bonusbar:0] -> hide, else -> show.
+-- If BonusActionBarFrame is NOT a SecureHandlerStateTemplate frame, the
+-- _onstate handler never fires and the driver is inert (harmless — the client's
+-- own HideBonusActionBar, which fires on unstealth, covers the hide). The
+-- marker attribute (set by the snippet) confirms which case we're in and is
+-- logged at install.
 local bonusBarDriver
 function MobileUILayout.InstallBonusBarDriver()
     if bonusBarDriver or not BonusActionBarFrame then return end
-    local h = CreateFrame("Frame", nil, BonusActionBarFrame, "SecureHandlerStateTemplate")
-    h:SetSize(1, 1)
-    h:SetPoint("TOPLEFT", BonusActionBarFrame, "TOPLEFT", 0, 0)
-    h:Show()
+    local bf = BonusActionBarFrame
     local ok = pcall(function()
-        h:SetAttribute("_onstate-bonushide", [[
-            local target = self:GetParent()
-            if target then
-                if newstate == "1" then
-                    target:Hide()
-                else
-                    target:Show()
-                end
+        bf:SetAttribute("mobileui-bonushide-ran", nil)
+        bf:SetAttribute("_onstate-bonushide", [[
+            self:SetAttribute("mobileui-bonushide-ran", "1")
+            if newstate == "1" then
+                self:Hide()
+            else
+                self:Show()
             end
         ]])
-        RegisterStateDriver(h, "bonushide", "[bonusbar:0] 1; 0")
+        RegisterStateDriver(bf, "bonushide", "[bonusbar:0] 1; 0")
     end)
-    if ok then
-        bonusBarDriver = h
+    if ok and bf:GetAttribute("mobileui-bonushide-ran") == "1" then
+        bonusBarDriver = true
+        MobileUI_Debug("Bonus bar driver live (state template confirmed)")
     else
-        h:Hide()
-        MobileUI_Debug("Bonus bar driver install failed: " .. tostring(ok))
+        pcall(function()
+            UnregisterStateDriver(bf, "bonushide")
+            bf:SetAttribute("_onstate-bonushide", nil)
+        end)
+        bf:SetAttribute("mobileui-bonushide-ran", nil)
+        MobileUI_Debug("Bonus bar driver inert (not a state template); relying on client hide")
     end
 end
 
 function MobileUILayout.UninstallBonusBarDriver()
     if bonusBarDriver then
-        UnregisterStateDriver(bonusBarDriver, "bonushide")
-        bonusBarDriver:Hide()
+        pcall(function()
+            UnregisterStateDriver(BonusActionBarFrame, "bonushide")
+            BonusActionBarFrame:SetAttribute("_onstate-bonushide", nil)
+        end)
+        BonusActionBarFrame:SetAttribute("mobileui-bonushide-ran", nil)
         bonusBarDriver = nil
     end
 end
