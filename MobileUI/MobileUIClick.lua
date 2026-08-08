@@ -32,10 +32,15 @@ local catcher -- hidden Button that receives the simulated clicks
 -- A 1x1 hidden Button.  Real mouse events never reach it (hidden frames are
 -- skipped by hit-testing), but SetOverrideBindingClick simulates clicks on it
 -- directly through the binding system, so visibility is irrelevant.
+--
+-- It MUST inherit SecureHandlerClickTemplate: TurnOrActionStart/Stop are
+-- protected in the Ascension client (the wowprogramming reference doesn't flag
+-- them, but the client taints insecure callers).  Scripts on a secure frame
+-- run in secure context, so the protected calls are allowed.
 
 local function CreateCatcher()
     if catcher then return end
-    catcher = CreateFrame("Button", "MobileUIClickCatcher", UIParent)
+    catcher = CreateFrame("Button", "MobileUIClickCatcher", UIParent, "SecureHandlerClickTemplate")
     catcher:SetSize(1, 1)
     catcher:RegisterForClicks("LeftButtonDown", "LeftButtonUp")
     catcher:SetScript("OnMouseDown", function(self, button)

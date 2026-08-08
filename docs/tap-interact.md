@@ -37,8 +37,14 @@ a frame. So:
    world interaction. Tap on NPC → talk. Tap on world objective → use it.
    Hold (real mouse) → steer, then interact on release, mirroring right-click.
 
-None of these functions are protected in 3.3.5a (no protection notes in the
-reference), so the override is set at `PLAYER_ENTERING_WORLD` and on toggle.
+None of these functions are marked protected in the wowprogramming reference,
+but the Ascension client **does** protect `TurnOrActionStart/Stop` — calling
+them from a plain (insecure) frame's handler raises
+`AddOn 'MobileUI' tainted the call of the secure function 'TurnOrActionStart()'`
+and the call is blocked.  The catcher therefore inherits
+`SecureHandlerClickTemplate` (FrameXML `SecureHandlers.xml`): scripts on a
+secure frame run in secure context, so the protected calls are allowed.  The
+override is set at `PLAYER_ENTERING_WORLD` and on toggle.
 
 ## What changes / what doesn't
 
