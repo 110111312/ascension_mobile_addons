@@ -87,9 +87,25 @@
                 </Scripts>
             </CheckButton>
 
-            <CheckButton name="$parentDebugCheck" inherits="OptionsCheckButtonTemplate">
+            <CheckButton name="$parentTapSellCheck" inherits="OptionsCheckButtonTemplate">
                 <Anchors>
                     <Anchor point="TOPLEFT" relativeTo="$parentTapInteractCheck" relativePoint="BOTTOMLEFT">
+                        <Offset><AbsDimension x="0" y="-8"/></Offset>
+                    </Anchor>
+                </Anchors>
+                <Scripts>
+                    <OnLoad>
+                        _G[self:GetName().."Text"]:SetText("Tap = Sell (tap a bag item to sell while a vendor is open)")
+                    </OnLoad>
+                    <OnClick>
+                        MobileUI_OptionsOnTapSellChanged(self:GetChecked())
+                    </OnClick>
+                </Scripts>
+            </CheckButton>
+
+            <CheckButton name="$parentDebugCheck" inherits="OptionsCheckButtonTemplate">
+                <Anchors>
+                    <Anchor point="TOPLEFT" relativeTo="$parentTapSellCheck" relativePoint="BOTTOMLEFT">
                         <Offset><AbsDimension x="0" y="-8"/></Offset>
                     </Anchor>
                 </Anchors>

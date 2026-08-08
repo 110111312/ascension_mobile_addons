@@ -19,6 +19,7 @@ local DEFAULTS = {
     lookSpeed    = 90,    -- cameraYawMoveSpeed; 90 = WoW min; lower = less sensitive
     layoutEnabled = true, -- true = apply the 5-point mobile layout revamp
     tapInteract  = true,  -- true = left click on world acts like right click (interact)
+    tapSell      = true,  -- true = tap a bag item to sell while a vendor is open
     debug        = false, -- true = also print MobileUI_Debug entries to chat
 }
 
@@ -91,6 +92,9 @@ function core:PLAYER_ENTERING_WORLD()
     MobileUI:ApplyChatVisibility()
     if MobileDB.tapInteract then
         MobileUIClick:Apply()
+    end
+    if MobileDB.tapSell then
+        MobileUISell:Apply()
     end
     if MobileDB.layoutEnabled then
         MobileUILayout:Apply()
@@ -186,13 +190,20 @@ SlashCmdList["MOBILEUI"] = function(msg)
             " (left click on world now " ..
             (enabled and "interacts like right click" or "targets normally") .. ").")
 
+    elseif cmd == "sell" then
+        local enabled = MobileUISell:Toggle()
+        print("|cff00ccff[MobileUI]|r Tap = Sell " ..
+            (enabled and "ON" or "OFF") ..
+            " (tap a bag item to sell while a vendor is open).")
+
     else
         print("|cff00ccff[MobileUI]|r Scale: 1.2 (fixed; minimap 1.25)" ..
             " | chat: " .. (MobileDB.chatHidden and "hidden" or "shown") ..
             " | look: " .. tostring(MobileDB.lookSpeed or 90) ..
             " | layout: " .. (MobileDB.layoutEnabled and "on" or "off") ..
-            " | tap: " .. (MobileDB.tapInteract and "on" or "off"))
-        print("|cff00ccff[MobileUI]|r Usage: /mui chat | /mui look <10-90> | /mui layout | /mui tap | /mui debug | /mui debugclear")
+            " | tap: " .. (MobileDB.tapInteract and "on" or "off") ..
+            " | sell: " .. (MobileDB.tapSell and "on" or "off"))
+        print("|cff00ccff[MobileUI]|r Usage: /mui chat | /mui look <10-90> | /mui layout | /mui tap | /mui sell | /mui debug | /mui debugclear")
     end
 end
 
@@ -208,6 +219,8 @@ function MobileUI_OptionsOnShow(panel)
     if layoutCheck then layoutCheck:SetChecked(MobileDB.layoutEnabled) end
     local tapCheck = _G[name .. "TapInteractCheck"]
     if tapCheck then tapCheck:SetChecked(MobileDB.tapInteract) end
+    local sellCheck = _G[name .. "TapSellCheck"]
+    if sellCheck then sellCheck:SetChecked(MobileDB.tapSell) end
     local debugCheck = _G[name .. "DebugCheck"]
     if debugCheck then debugCheck:SetChecked(MobileDB.debug) end
 end
@@ -235,6 +248,16 @@ function MobileUI_OptionsOnTapInteractChanged(checked)
         MobileUIClick:Apply()
     else
         MobileUIClick:Revert()
+    end
+end
+
+function MobileUI_OptionsOnTapSellChanged(checked)
+    if not MobileDB then return end
+    MobileDB.tapSell = checked and true or false
+    if MobileDB.tapSell then
+        MobileUISell:Apply()
+    else
+        MobileUISell:Revert()
     end
 end
 
