@@ -218,7 +218,10 @@ or IsAutoRepeatAction(action))`. The type checks are SLOT-CONTENT checks (1
 whenever the attack/auto-shot ability is in the slot), so they must be ANDed
 with `IsCurrentAction` (1 while the repeating action is actually repeating) —
 otherwise the attack button glows red permanently. It is NOT shown for spell
-casts; the casting feedback is the checked-state ring below. It
+casts; the casting feedback is the checked-state ring below. The flash also
+**blinks** (stock behavior) instead of staying solid: a 0.5s timer in
+`ReassertFlash` toggles the texture visibility while a flash is active, and
+resets to "on" when idle so the glow appears immediately at attack start. It
 also clears a **latched checked state**: the client checks the
 button while casting (the casting highlight) but the uncheck runs via the
 OnEvent-driven `ActionButton_UpdateState`, which is cleared at apply — so the

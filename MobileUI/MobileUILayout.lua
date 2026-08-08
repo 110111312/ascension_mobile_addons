@@ -810,7 +810,14 @@ end
 -- repeating, Hide otherwise — so it turns off within a frame of the cast
 -- ending. Flash is a plain texture region, so Show/Hide is taint-safe
 -- (SetVertexColor/SetCooldown are the tainting ops, not texture Show/Hide).
-local function ReassertFlash()
+-- Flash blink state (module-local): the red attack/auto-shot flash blinks
+-- (stock behavior) instead of staying solid red. Toggled on a 0.5s timer in
+-- ReassertFlash; resets to "on" whenever no flash is active so the glow
+-- appears immediately when auto-attack starts.
+local flashBlinkT, flashBlinkOn = 0, true
+
+local function ReassertFlash(elapsed)
+    local anyFlash = false
     for i = 1, 12 do
         local btn = _G["ActionButton" .. i]
         if btn then
@@ -823,9 +830,10 @@ local function ReassertFlash()
             -- (1 while the repeating action is actually repeating) — otherwise
             -- the attack button glows red permanently.
             local flash = IsCurrentAction(action) and (IsAttackAction(action) or IsAutoRepeatAction(action))
+            if flash then anyFlash = true end
             local fl = _G[btn:GetName() .. "Flash"]
             if fl then
-                if flash then
+                if flash and flashBlinkOn then
                     if not fl:IsShown() then fl:Show() end
                 else
                     if fl:IsShown() then fl:Hide() end
@@ -841,6 +849,17 @@ local function ReassertFlash()
             -- protected call, so this is taint-safe.
             if not IsCurrentAction(action) and btn:GetChecked() then btn:SetChecked(nil) end
         end
+    end
+    -- Blink: advance the timer only while a flash is active; reset to "on"
+    -- when idle so the glow appears immediately at attack start.
+    if anyFlash then
+        flashBlinkT = flashBlinkT + (elapsed or 0)
+        if flashBlinkT >= 0.5 then
+            flashBlinkT = 0
+            flashBlinkOn = not flashBlinkOn
+        end
+    else
+        flashBlinkT, flashBlinkOn = 0, true
     end
 end
 
@@ -1303,7 +1322,7 @@ local function ApplyHideFrames()
             -- latches on after a cast. Re-assert it here from the attribute-
             -- resolved action so it turns off within a frame of the cast
             -- ending. Taint-safe: Flash is a plain texture region.
-            ReassertFlash()
+            ReassertFlash(elapsed)
             -- Everything below this line Show()/Hide()s PROTECTED frames (the
             -- stock bars and bar buttons): during combat lockdown those calls
             -- are blocked and TAINT the frames — which then surfaces as
