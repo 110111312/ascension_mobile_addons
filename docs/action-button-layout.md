@@ -171,18 +171,23 @@ transition (bonus offset 1→0):
     flip-bridge ops) → `'UNKNOWN()'` still.
   Conclusion: restricted snippets on this client may ONLY `SetAttribute`;
   any `Hide`/`Show`/`SetShown` — even on `self` — taints.
-  **Current approach:** the guard hides `BonusActionBarFrame` **out of
-  combat only** (per-frame, in the same out-of-combat section that hides
+  **Current approach — the busy clear:** the guard's OnUpdate clears
+  `MainMenuBar.busy` every frame (`MainMenuBar.busy = nil` — a plain FIELD
+  write, not a protected method call, so no taint; runs every frame
+  including combat). That un-gates the client's own `HideBonusActionBar()`:
+  with `busy` falsy it takes its instant `Hide()` path at the unstealth
+  event, hiding the bar in combat with **zero addon touch on it** — no
+  error, no window. (Hypothesis: our layout hides `MainMenuBar` every
+  frame, plausibly jamming the client's own bar-slide state machine around
+  combat transitions so `busy` stays set — which is exactly when the 3s
+  window appears.) Belt-and-suspenders: the guard also hides
+  `BonusActionBarFrame` **out of combat only** (same section that hides
   `MainMenuBar` — the identical call has run for months with zero errors,
-  so out-of-combat protected calls are clean on this client). That keeps the
-  bar hidden whenever we're out of combat (covers out-of-combat unstealth;
-  during stealth the arc flip replaces the stock bar anyway). In combat the
-  bar cannot be hidden at all — the ~3s window is real and currently
-  diagnosed: the unstealth branch logs `bonusShown`/`mmbShown`/
-  `MainMenuBar.busy`/parent and probes visibility every 0.5s for 4s (Debug
-  to Chat) to determine whether the client's hide eventually fires, whether
-  `MainMenuBar.busy` is the gate (candidate root fix: clear it so the
-  client's hide takes the instant path), or whether it's a routing cache.
+  so out-of-combat protected calls are clean here). The unstealth branch
+  probes the result (Debug to Chat): `bonusShown` should read 0 at
+  unstealth (already hidden) or drop at +0.5s; if it persists to +3s the
+  busy hypothesis failed and the fallback is restoring the flip-bridge
+  driver (`63c5840` — working clicks, cosmetic `UNKNOWN()` error).
 - **`ChangeActionBarPage(1)`** on the same transition — empirically required
   for the in-combat unstealth display flip. The page never visibly moves and
   no event fires, but without it the bar froze on stealth skills when

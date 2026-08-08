@@ -1151,6 +1151,17 @@ local function ApplyHideFrames()
         guardFrame = CreateFrame("Frame")
         guardFrame:SetScript("OnUpdate", function(self, elapsed)
             if not MobileDB or not MobileDB.layoutEnabled then return end
+            -- MainMenuBar.busy: the client's HideBonusActionBar() is gated on
+            -- it. When set (our layout hides MainMenuBar every frame, plausibly
+            -- jamming the client's own bar-slide state machine around combat
+            -- transitions) the client takes the stuck/late slide path and the
+            -- bonus bar stays SHOWN ~3s after an in-combat unstealth, stealing
+            -- clicks ("you can't do that yet"). Clearing it — a plain FIELD
+            -- write, not a protected method call, so no taint — makes the
+            -- client's HideBonusActionBar() take its instant Hide() path,
+            -- hiding the bar in combat with zero addon touch on it. Kept every
+            -- frame, including during combat lockdown.
+            MainMenuBar.busy = nil
             -- Flip state check (0.25s throttle). The stance/stealth events
             -- (UPDATE_BONUS_ACTIONBAR / UPDATE_SHAPESHIFT_FORM) DO fire on
             -- Ascension (confirmed in-game), so flip detection is event-driven
@@ -1159,9 +1170,9 @@ local function ApplyHideFrames()
             -- required for the in-combat unstealth display flip; (2) it
             -- re-asserts ApplyFlip when the bridge's actionpage attribute
             -- updates asynchronously (driver 0.2s throttle / event re-eval).
-            -- The bonus bar is hidden out of combat only (see the guard
-            -- section below); the unstealth branch probes the in-combat
-            -- window where the client's own hide is ~3s late.
+            -- The bonus bar's in-combat hide is handled by the busy clear
+            -- above (client's own HideBonusActionBar becomes instant); the
+            -- unstealth branch probes that it worked.
             self._t = (self._t or 0) + elapsed
             if self._t >= 0.25 then
                 self._t = 0
@@ -1190,13 +1201,13 @@ local function ApplyHideFrames()
                     --    this client (snippets may ONLY SetAttribute — even
                     --    self:SetShown taints: 'UNKNOWN()'; addon-context
                     --    bf:Hide() taints: 'BonusActionBarFrame:Hide()'
-                    --    prevented). The client's own HideBonusActionBar is
-                    --    ~3s late in combat (stock slide path gated on
-                    --    MainMenuBar.busy), during which the shown bar steals
-                    --    clicks -> stealth slots, "you can't do that yet".
-                    --    The guard hides the bar OUT of combat (clean); this
-                    --    branch probes the in-combat window to find what
-                    --    clears it (client hide? animation? routing cache).
+                    --    prevented). Fix instead: the guard clears
+                    --    MainMenuBar.busy every frame (top of this OnUpdate),
+                    --    un-gating the client's own HideBonusActionBar so it
+                    --    takes its instant Hide() path at the unstealth
+                    --    event. The probe below verifies it: bonusShown
+                    --    should read 0 here (already hidden) or drop at
+                    --    +0.5s. If it persists to +3s the hypothesis failed.
                     if off == 0 and prevOff and prevOff > 0 then
                         local bf = BonusActionBarFrame
                         local mmb = MainMenuBar
@@ -1254,16 +1265,16 @@ local function ApplyHideFrames()
                 local f = _G[name]
                 if f and f:IsShown() then f:Hide() end
             end
-            -- BonusActionBarFrame hide (out of combat only): the client's own
-            -- HideBonusActionBar is ~3s late in combat (stock slide path gated
-            -- on MainMenuBar.busy), during which the shown bar steals clicks.
-            -- In combat the bar CANNOT be hidden from the addon (snippets may
-            -- only SetAttribute — self:SetShown taints 'UNKNOWN()'; addon
-            -- bf:Hide() taints 'BonusActionBarFrame:Hide()' prevented). Out of
-            -- combat the call is clean — the guard has hidden MainMenuBar the
-            -- same way for months with zero errors — so the bar is kept hidden
-            -- here whenever we're out of combat (redundant with MainMenuBar
-            -- hidden if that's its parent; matters if it isn't).
+            -- BonusActionBarFrame hide (out of combat only): belt-and-
+            -- suspenders for the MainMenuBar.busy clear at the top of this
+            -- OnUpdate. The busy clear is what makes the client's own
+            -- HideBonusActionBar instant (covering the in-combat unstealth);
+            -- this hide keeps the bar gone whenever we're out of combat —
+            -- including during stealth, where the arc flip replaces the stock
+            -- bar. The call is clean out of combat (the guard has hidden
+            -- MainMenuBar the same way for months with zero errors); in combat
+            -- it must NOT run (taints, 'BonusActionBarFrame:Hide()' prevented)
+            -- which is why it lives after the lockdown early-return.
             local bf = BonusActionBarFrame
             if bf and bf:IsShown() then bf:Hide() end
             -- MultiBarBottomLeft: keep SHOWN (a hidden parent hides the
