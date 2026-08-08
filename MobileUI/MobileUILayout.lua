@@ -528,6 +528,7 @@ local function ApplyActionBar()
     end
     MobileUILayout.EnsureFlipWatcher()
     MobileUILayout.InstallFlipBridge()
+    MobileUILayout.InstallBonusBarDriver()
     MobileUILayout.ApplyFlip()
 end
 local function RevertActionBar()
@@ -599,6 +600,8 @@ local function RevertActionBar()
     -- Drop the SecureStateDriver bridge (the buttons were reparented back
     -- to their stock parents above, so the handler frames are childless).
     MobileUILayout.UninstallFlipBridge()
+    -- Drop the bonus-bar hide driver; the stock bar returns to client control.
+    MobileUILayout.UninstallBonusBarDriver()
 end
 
 -- 4b. Stance/stealth flip follower — mirror the bar the client targets
@@ -878,6 +881,49 @@ function MobileUILayout.UninstallFlipBridge()
             h:Hide()
             flipHandlers[i] = nil
         end
+    end
+end
+
+-- BonusActionBarFrame hide driver (secure channel).
+-- BonusActionBarFrame is a child of MainMenuBar, a PROTECTED frame, so it is
+-- protected too — the old guard-poll bf:Hide() from addon context TAINTED it,
+-- after which the client's own secure HideBonusActionBar() was blocked
+-- mid-combat ("AddOn 'MobileUI' prevented the call of the secure function
+-- 'BonusActionBarFrame:Hide()'"). Same pattern as the flip bridge: a
+-- SecureHandlerStateTemplate frame of our own drives the visibility, and its
+-- _onstate snippet calls BonusActionBarFrame:Hide()/Show() from a SECURE
+-- context (state-driver manager + restricted closure), which does not taint.
+-- Condition: [bonusbar:0] -> hide (no bonus bar active), else -> show.
+local bonusBarDriver
+function MobileUILayout.InstallBonusBarDriver()
+    if bonusBarDriver or not BonusActionBarFrame then return end
+    local h = CreateFrame("Frame", nil, UIParent, "SecureHandlerStateTemplate")
+    h:SetSize(1, 1)
+    h:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
+    h:Show()
+    local ok = pcall(function()
+        h:SetAttribute("_onstate-bonushide", [[
+            if newstate == "1" then
+                BonusActionBarFrame:Hide()
+            else
+                BonusActionBarFrame:Show()
+            end
+        ]])
+        RegisterStateDriver(h, "bonushide", "[bonusbar:0] 1; 0")
+    end)
+    if ok then
+        bonusBarDriver = h
+    else
+        h:Hide()
+        MobileUI_Debug("Bonus bar driver install failed: " .. tostring(ok))
+    end
+end
+
+function MobileUILayout.UninstallBonusBarDriver()
+    if bonusBarDriver then
+        UnregisterStateDriver(bonusBarDriver, "bonushide")
+        bonusBarDriver:Hide()
+        bonusBarDriver = nil
     end
 end
 
@@ -1184,15 +1230,17 @@ local function ApplyHideFrames()
                     --    slide path doesn't run), and its keypress resolver
                     --    routes ACTIONBUTTON keys to the bonus bar while that
                     --    frame is shown — so keys get stuck casting stealth
-                    --    slots. Force-hide it.
+                    --    slots. Hide it via the secure state driver
+                    --    (InstallBonusBarDriver): addon-context Hide() would
+                    --    taint the frame (it's a child of MainMenuBar, a
+                    --    protected frame) and block the client's own secure
+                    --    HideBonusActionBar() call.
                     -- 2) ChangeActionBarPage(1) here is what makes the
                     --    in-combat unstealth display flip work (cpage stays 1
                     --    and no event fires, but without it the bar froze on
                     --    stealth skills when unstealthing during combat).
                     if off == 0 and prevOff and prevOff > 0 then
-                        local bf = BonusActionBarFrame
-                        local shown = bf and bf:IsShown() and 1 or 0
-                        if bf and shown == 1 then bf:Hide() end
+                        local shown = BonusActionBarFrame and BonusActionBarFrame:IsShown() and 1 or 0
                         local ok = pcall(ChangeActionBarPage, 1)
                         MobileUI_Debug(string.format("Flip unstealth: bonusShown=%d changePage=%s", shown, tostring(ok)))
                         if MobileDB and MobileDB.debug then
@@ -1204,17 +1252,16 @@ local function ApplyHideFrames()
                     MobileUILayout.ApplyFlip()
                 end
             end
-            -- This client never hides BonusActionBarFrame after unstealth
-            -- (the C-side keypress router targets it while shown, sticking
-            -- keys on stealth slots). Keep it hidden whenever no bonus bar is
-            -- active; in stealth the offset is > 0 so the real stealth bar is
-            -- left alone. BonusActionBarFrame is NOT a protected frame, so
-            -- hiding it is taint-safe even during combat lockdown — the
-            -- client re-shows bars at combat transitions, and if it re-shows
-            -- the bonus bar mid-combat after an unstealth, keys stay stuck on
-            -- stealth slots for the whole fight.
-            local bf = BonusActionBarFrame
-            if bf and bf:IsShown() and (GetBonusBarOffset() or 0) == 0 then bf:Hide() end
+            -- BonusActionBarFrame is kept hidden whenever no bonus bar is
+            -- active by the secure state driver (InstallBonusBarDriver): its
+            -- condition [bonusbar:0] -> hide re-evaluates on events + the 0.2s
+            -- driver throttle, so the client re-showing the bar at combat
+            -- transitions is re-hidden securely. In stealth the offset is > 0
+            -- so the real stealth bar is left alone. We must NOT Hide()/Show()
+            -- it from addon context — it's a child of MainMenuBar (protected),
+            -- so addon-context calls taint it and the client's own secure
+            -- HideBonusActionBar() gets blocked ("prevented the call of the
+            -- secure function 'BonusActionBarFrame:Hide()'").
             -- Everything below this line Show()/Hide()s PROTECTED frames (the
             -- stock bars and bar buttons): during combat lockdown those calls
             -- are blocked and TAINT the frames — which then surfaces as

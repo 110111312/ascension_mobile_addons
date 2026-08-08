@@ -152,25 +152,57 @@ slots even though the UI looked normal (display flip is pure Lua and kept
 working — hence "bar flips back but keys dead"). Fixes on the unstealth
 transition (bonus offset 1→0):
 
-- **Force-hide `BonusActionBarFrame`** — one-shot at the transition, plus a
-  persistent guard in the layout guard that keeps it hidden whenever
-  `GetBonusBarOffset() == 0`. `BonusActionBarFrame` is not a restricted frame,
-  so hiding it is taint-safe.
+- **Hide `BonusActionBarFrame` via a secure state driver** — one-shot at the
+  transition (the driver's `[bonusbar:0] → hide` condition re-evaluates on
+  events + the 0.2s driver throttle, re-hiding it even if the client re-shows
+  the bar at combat transitions). `BonusActionBarFrame` is a **child of
+  `MainMenuBar`, which is a protected frame — so `BonusActionBarFrame` is
+  protected too**. Calling `Hide()` on it from addon context (as an earlier
+  version of this code did in the layout guard) **taints** it, after which the
+  client's own secure `HideBonusActionBar()` is blocked mid-combat
+  (`AddOn 'MobileUI' prevented the call of the secure function
+  'BonusActionBarFrame:Hide()'`). The driver mirrors the flip-bridge pattern:
+  a `SecureHandlerStateTemplate` frame of our own drives the visibility, and
+  its `_onstate` snippet calls `BonusActionBarFrame:Hide()/Show()` from a
+  secure context (state-driver manager + restricted closure), which does not
+  taint.
 - **`ChangeActionBarPage(1)`** on the same transition — empirically required
   for the in-combat unstealth display flip. The page never visibly moves and
   no event fires, but without it the bar froze on stealth skills when
   unstealthing during combat.
 
-**Combat display ownership (`RefreshScatterCombat`):** while in combat the
-layout re-asserts the scatter buttons' visible state every frame from the
-attr-resolved page (the client re-renders them from stale `self.action`).
-This redraw covers the icon texture, usability tints, cooldown, and the stock
-action-button flash. The flash keys off `IsAttackAction` **or**
-`IsAutoRepeatAction` **or** `IsCurrentAction` — `IsAttackAction` alone would
-miss hunters' Auto Shot and wand users' Shoot (see `IsAutoRepeatAction` in
-the API reference). The cooldown spiral is only drawn when `GetActionCooldown`
-returns `enable == 1` (the reference notes `enable` "does not always correlate
-with whether the action is ready").
+**Combat display ownership:** the scatter buttons' `OnEvent` is **cleared** at
+apply (see below), so the client never dispatches `ActionButton_Update` on
+them — which means it never calls `self:Show()/self:Hide()` (blocked on our
+tainted buttons mid-combat) and never renders icon/tint/cooldown. The addon
+owns the display via `RefreshScatterButtons`, triggered by `flipFrame` events
+(`UPDATE_BONUS_ACTIONBAR`, `UPDATE_SHAPESHIFT_FORM`, `ACTIONBAR_UPDATE_COOLDOWN`,
+etc.) and the 0.25s guard poll — **not per-frame**: the cooldown spiral is
+widget-internal after `SetCooldown`, so event-driven re-sync is enough. It
+redraws from the attr-resolved page: icon texture, usability tints
+(`IsUsableAction` vertex colors — the old per-frame `RefreshScatterCombat`
+that did this was removed in phase 4; the event/poll-driven re-assert replaced
+it), and the cooldown (`GetActionCooldown` with `enable == 1`). The stock
+auto-attack flash is **not** re-asserted (not reported as an issue; the old
+per-frame redraw handled it via `IsAttackAction`/`IsAutoRepeatAction`/
+`IsCurrentAction`).
+
+**Why `OnEvent` is cleared (taint, learned in-game):** the client's
+`ActionButton_Update` resolves `self.action` from the `actionpage` attribute,
+but on a detected-while-stealthed form transition it runs *before* the bridge's
+state driver updates that attribute, leaving a stale (stealth) `self.action`.
+Fixing the resulting gray tint requires `SetVertexColor` — which **taints** the
+button on this client. With `OnEvent` intact, the client then calls
+`self:Show()` on the tainted button mid-combat, which is blocked
+(`AddOn 'MobileUI' prevented the call of the secure function
+'ActionButton1:Show()'`). Clearing `OnEvent` stops the client from dispatching
+those updates at all, so the blocked `Show()`/`Hide()` never happens — and the
+addon's own display ops (vertex colors, cooldown), while they do taint the
+button, never surface because the client no longer touches the button in
+combat. `showgrid=1` is also set so non-event client code paths don't hide
+empty slots. Phase 3's `flipLite` test only covered stealth toggles (no taint);
+the detected-in-combat form transition is what triggers the blocked
+`self:Show()`.
 
 ## Keybind Summary
 
