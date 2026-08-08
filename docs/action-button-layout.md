@@ -213,7 +213,14 @@ cast events are unreliable on this server, so the `IsCurrentAction`-driven
 recomputes from the attr-resolved action (`IsAttackAction`/`IsAutoRepeatAction`/
 `IsCurrentAction`) and `Show()/Hide()`s the Flash texture directly (plain
 texture region — taint-safe), so the glow turns off within a frame of the cast
-ending. `UNIT_SPELLCAST_START/STOP/SUCCEEDED` + `UNIT_SPELLCAST_CHANNEL_*`
+ending. It also clears a **latched checked state**: the client checks the
+button while casting (the casting highlight) but the uncheck runs via the
+OnEvent-driven `ActionButton_UpdateState`, which is cleared at apply — so the
+checked glow (`RoundButtonChecked`/`Border` — the "light yellow border" the
+user saw) stuck forever. `SetChecked(nil)` runs whenever the action is not
+current (outside the cast), making the glow transient like the flash
+(`SetChecked` is a plain state setter, not a protected call — taint-safe).
+`UNIT_SPELLCAST_START/STOP/SUCCEEDED` + `UNIT_SPELLCAST_CHANNEL_*`
 are also registered on `flipFrame` for immediate icon/tint/cooldown re-sync
 at cast boundaries (they fire on this server; the per-frame re-assert is the
 reliable fallback for the flash).

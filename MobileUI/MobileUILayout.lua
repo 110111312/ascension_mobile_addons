@@ -815,15 +815,24 @@ local function ReassertFlash()
         local btn = _G["ActionButton" .. i]
         if btn then
             local action = ResolveScatterAction(btn, i)
+            local flash = IsAttackAction(action) or IsAutoRepeatAction(action) or IsCurrentAction(action)
             local fl = _G[btn:GetName() .. "Flash"]
             if fl then
-                local flash = IsAttackAction(action) or IsAutoRepeatAction(action) or IsCurrentAction(action)
                 if flash then
                     if not fl:IsShown() then fl:Show() end
                 else
                     if fl:IsShown() then fl:Hide() end
                 end
             end
+            -- Clear a latched checked state: the client checks the button
+            -- while casting (the casting highlight) but the uncheck runs via
+            -- the OnEvent-driven ActionButton_UpdateState, which is cleared
+            -- at apply — so the checked glow (RoundButtonChecked / Border)
+            -- sticks forever. Clear it whenever the action is not current
+            -- (outside the cast), so the glow is transient like the flash.
+            -- SetChecked is a plain state setter, not a protected call, so
+            -- this is taint-safe.
+            if not flash and btn:GetChecked() then btn:SetChecked(nil) end
         end
     end
 end
