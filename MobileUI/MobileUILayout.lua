@@ -528,7 +528,6 @@ local function ApplyActionBar()
     end
     MobileUILayout.EnsureFlipWatcher()
     MobileUILayout.InstallFlipBridge()
-    MobileUILayout.InstallBonusBarDriver()
     MobileUILayout.ApplyFlip()
 end
 local function RevertActionBar()
@@ -600,8 +599,6 @@ local function RevertActionBar()
     -- Drop the SecureStateDriver bridge (the buttons were reparented back
     -- to their stock parents above, so the handler frames are childless).
     MobileUILayout.UninstallFlipBridge()
-    -- Drop the bonus-bar hide driver; the stock bar returns to client control.
-    MobileUILayout.UninstallBonusBarDriver()
 end
 
 -- 4b. Stance/stealth flip follower — mirror the bar the client targets
@@ -884,65 +881,6 @@ function MobileUILayout.UninstallFlipBridge()
     end
 end
 
--- BonusActionBarFrame hide driver (secure channel, pure flip-bridge pattern).
--- The client's own HideBonusActionBar() on this Ascension client fires on
--- unstealth but is ~3s LATE (stock slide path gated on MainMenuBar.busy).
--- During that window the bonus bar stays SHOWN and its stock buttons overlap
--- the bottom-right arc and steal clicks -> they resolve to the stealth slots
--- (73-84), which are unusable out of stealth ("you can't do that yet") even
--- though the arc display (attribute-driven) already shows the normal bar. So
--- the bar must be hidden AT the unstealth moment.
--- Addon-context bf:Hide() and snippet Hide()/Show() calls on the frame both
--- TAINT it on this client (its restricted snippet env only trusts
--- SetAttribute ops; every hide attempt surfaced "prevented the call of the
--- secure function 'BonusActionBarFrame:Hide()'" / 'UNKNOWN()').
--- This version is the pure flip-bridge pattern: RegisterStateDriver DIRECTLY
--- on BonusActionBarFrame (so the snippet's self is the frame itself, the
--- same self-reference the client's own handlers use) and a snippet that uses
--- ONLY self:SetShown + the marker self:SetAttribute — the ops the flip bridge
--- proves clean:
---   [bonusbar:0] -> hidden, else -> shown (mirror the client's own logic).
--- If BonusActionBarFrame is NOT a SecureHandlerStateTemplate frame the
--- _onstate handler never fires and the driver is inert (self-cleans; the
--- client's delayed hide is the only hide). The marker attribute (set by the
--- snippet) confirms which case we're in and is logged at install.
-local bonusBarDriver
-local BONUSHIDE_SNIPPET = [[
-    self:SetAttribute("mobileui-bonushide-ran", "1")
-    self:SetShown(newstate == "1")
-]]
-function MobileUILayout.InstallBonusBarDriver()
-    if bonusBarDriver or not BonusActionBarFrame then return end
-    local bf = BonusActionBarFrame
-    local ok = pcall(function()
-        bf:SetAttribute("mobileui-bonushide-ran", nil)
-        bf:SetAttribute("_onstate-bonushide", BONUSHIDE_SNIPPET)
-        RegisterStateDriver(bf, "bonushide", "[bonusbar:0] 0; 1")
-    end)
-    if ok and bf:GetAttribute("mobileui-bonushide-ran") == "1" then
-        bonusBarDriver = true
-        MobileUI_Debug("Bonus bar driver live (state template confirmed)")
-    else
-        pcall(function()
-            UnregisterStateDriver(bf, "bonushide")
-            bf:SetAttribute("_onstate-bonushide", nil)
-        end)
-        bf:SetAttribute("mobileui-bonushide-ran", nil)
-        MobileUI_Debug("Bonus bar driver inert (not a state template); relying on client hide")
-    end
-end
-
-function MobileUILayout.UninstallBonusBarDriver()
-    if bonusBarDriver then
-        pcall(function()
-            UnregisterStateDriver(BonusActionBarFrame, "bonushide")
-            BonusActionBarFrame:SetAttribute("_onstate-bonushide", nil)
-        end)
-        BonusActionBarFrame:SetAttribute("mobileui-bonushide-ran", nil)
-        bonusBarDriver = nil
-    end
-end
-
 -- Per-frame combat display redraw REMOVED: the old RefreshScatterCombat ran
 -- every frame to own the display in combat. We now use the existing
 -- RefreshScatterButtons (event/poll-driven) for the same job -- icon texture,
@@ -1221,8 +1159,9 @@ local function ApplyHideFrames()
             -- required for the in-combat unstealth display flip; (2) it
             -- re-asserts ApplyFlip when the bridge's actionpage attribute
             -- updates asynchronously (driver 0.2s throttle / event re-eval).
-            -- The bonus bar hide is owned by the secure state driver
-            -- (InstallBonusBarDriver), not this poll.
+            -- The bonus bar is hidden out of combat only (see the guard
+            -- section below); the unstealth branch probes the in-combat
+            -- window where the client's own hide is ~3s late.
             self._t = (self._t or 0) + elapsed
             if self._t >= 0.25 then
                 self._t = 0
@@ -1243,44 +1182,59 @@ local function ApplyHideFrames()
                         self._prevState or "?", state, InCombatLockdown() and 1 or 0))
                     self._prevState = state
                     -- On unstealth (bonus offset 1->0):
-                    -- 1) The bonus bar is hidden by the secure state driver
-                    --    (InstallBonusBarDriver) at the same moment: the
-                    --    client's OWN HideBonusActionBar is ~3s late on this
-                    --    client (stock slide path gated on MainMenuBar.busy),
-                    --    and during that window the shown bar's stock buttons
-                    --    overlap the arc and steal clicks -> they cast the
-                    --    (now unusable) stealth slots, "you can't do that
-                    --    yet", even though the arc display already shows the
-                    --    normal bar. Addon-context bf:Hide() and snippet
-                    --    Hide()/Show() both taint the protected frame on this
-                    --    client ("BonusActionBarFrame:Hide()" / 'UNKNOWN()'
-                    --    prevented), so the driver's snippet uses ONLY
-                    --    self:SetShown + self:SetAttribute — the flip-bridge
-                    --    ops proven clean.
-                    -- 2) ChangeActionBarPage(1) here is what makes the
+                    -- 1) ChangeActionBarPage(1) here is what makes the
                     --    in-combat unstealth display flip work (cpage stays 1
                     --    and no event fires, but without it the bar froze on
                     --    stealth skills when unstealthing during combat).
+                    -- 2) Bonus bar hide: PROVEN impossible from the addon on
+                    --    this client (snippets may ONLY SetAttribute — even
+                    --    self:SetShown taints: 'UNKNOWN()'; addon-context
+                    --    bf:Hide() taints: 'BonusActionBarFrame:Hide()'
+                    --    prevented). The client's own HideBonusActionBar is
+                    --    ~3s late in combat (stock slide path gated on
+                    --    MainMenuBar.busy), during which the shown bar steals
+                    --    clicks -> stealth slots, "you can't do that yet".
+                    --    The guard hides the bar OUT of combat (clean); this
+                    --    branch probes the in-combat window to find what
+                    --    clears it (client hide? animation? routing cache).
                     if off == 0 and prevOff and prevOff > 0 then
-                        local shown = BonusActionBarFrame and BonusActionBarFrame:IsShown() and 1 or 0
+                        local bf = BonusActionBarFrame
+                        local mmb = MainMenuBar
+                        local shown = bf and bf:IsShown() and 1 or 0
+                        local mmbShown = mmb and mmb:IsShown() and 1 or 0
+                        local busy = mmb and tostring(mmb.busy) or "?"
+                        local parent = (bf and bf:GetParent() and (bf:GetParent():GetName() or "?")) or "?"
                         local ok = pcall(ChangeActionBarPage, 1)
-                        MobileUI_Debug(string.format("Flip unstealth: bonusShown=%d changePage=%s", shown, tostring(ok)))
+                        MobileUI_Debug(string.format(
+                            "Flip unstealth: bonusShown=%d mmbShown=%d busy=%s parent=%s off=%d changePage=%s",
+                            shown, mmbShown, busy, parent, off, tostring(ok)))
                         if MobileDB and MobileDB.debug then
                             SlotDump("after-unstealth")
                             ButtonStateDump("unstealth")
                             DelayedDump(1.0, "unstealth+1s")
+                            -- Probe: sample bf visibility + busy every 0.5s for
+                            -- 4s to catch when the client's hide finally runs.
+                            local probe = CreateFrame("Frame")
+                            local pt, pi = 0, 0
+                            probe:SetScript("OnUpdate", function(self, el)
+                                pt = pt + el
+                                if pt >= 0.5 then
+                                    pt = 0
+                                    pi = pi + 1
+                                    local b2, m2 = BonusActionBarFrame, MainMenuBar
+                                    MobileUI_Debug(string.format("Probe +%.1fs: bonusShown=%d mmbShown=%d busy=%s",
+                                        pi * 0.5, b2 and b2:IsShown() and 1 or 0,
+                                        m2 and m2:IsShown() and 1 or 0,
+                                        m2 and tostring(m2.busy) or "?"))
+                                    if pi >= 8 then self:Hide() end
+                                end
+                            end)
+                            probe:Show()
                         end
                     end
                     MobileUILayout.ApplyFlip()
                 end
             end
-            -- BonusActionBarFrame is hidden by the secure state driver
-            -- (InstallBonusBarDriver): condition [bonusbar:0] -> hidden, else
-            -- -> shown, re-evaluated by the driver manager on events + its
-            -- 0.2s throttle — so re-shows by the client at combat transitions
-            -- are re-hidden without any addon-context call on the protected
-            -- frame. Nothing below calls Hide()/Show() on it (that taints and
-            -- blocks the client's own secure HideBonusActionBar()).
             -- Everything below this line Show()/Hide()s PROTECTED frames (the
             -- stock bars and bar buttons): during combat lockdown those calls
             -- are blocked and TAINT the frames — which then surfaces as
@@ -1300,6 +1254,18 @@ local function ApplyHideFrames()
                 local f = _G[name]
                 if f and f:IsShown() then f:Hide() end
             end
+            -- BonusActionBarFrame hide (out of combat only): the client's own
+            -- HideBonusActionBar is ~3s late in combat (stock slide path gated
+            -- on MainMenuBar.busy), during which the shown bar steals clicks.
+            -- In combat the bar CANNOT be hidden from the addon (snippets may
+            -- only SetAttribute — self:SetShown taints 'UNKNOWN()'; addon
+            -- bf:Hide() taints 'BonusActionBarFrame:Hide()' prevented). Out of
+            -- combat the call is clean — the guard has hidden MainMenuBar the
+            -- same way for months with zero errors — so the bar is kept hidden
+            -- here whenever we're out of combat (redundant with MainMenuBar
+            -- hidden if that's its parent; matters if it isn't).
+            local bf = BonusActionBarFrame
+            if bf and bf:IsShown() then bf:Hide() end
             -- MultiBarBottomLeft: keep SHOWN (a hidden parent hides the
             -- scatter buttons). Never touch its points — the client marks the
             -- bar container as a protected frame.

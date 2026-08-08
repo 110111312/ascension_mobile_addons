@@ -152,35 +152,37 @@ slots even though the UI looked normal (display flip is pure Lua and kept
 working — hence "bar flips back but keys dead"). Fixes on the unstealth
 transition (bonus offset 1→0):
 
-- **Hide `BonusActionBarFrame` via a secure state driver registered directly
-  on the frame** — the client's own `HideBonusActionBar()` is ~3s late on
-  this client (stock slide path gated on `MainMenuBar.busy`). During that
-  window the bar stays shown and its stock buttons overlap the bottom-right
-  arc, stealing clicks: they resolve to the stealth slots (73–84), which are
-  unusable out of stealth (`you can't do that yet`) even though the arc
-  display (attribute-driven) already shows the normal bar. So the addon hides
-  it at the unstealth moment. `BonusActionBarFrame` is a **child of
-  `MainMenuBar`, which is a protected frame — so `BonusActionBarFrame` is
-  protected too**. Every earlier attempt to hide it tainted it on this client
-  and blocked the client's own secure calls on it:
+- **Bonus bar hide is IMPOSSIBLE from the addon on this client — boundary
+  confirmed in-game.** The client's own `HideBonusActionBar()` is ~3s late in
+  combat (stock slide path gated on `MainMenuBar.busy`); during that window
+  the shown bar's stock buttons overlap the bottom-right arc and steal
+  clicks: they resolve to the stealth slots (73–84), which are unusable out
+  of stealth (`you can't do that yet`) even though the arc display
+  (attribute-driven) already shows the normal bar. But every hide mechanism
+  taints the protected frame and blocks the client's own secure calls on it:
   - addon-context `Hide()` (the original layout-guard approach) →
     `AddOn 'MobileUI' prevented the call of the secure function
     'BonusActionBarFrame:Hide()'`;
-  - a state-driver snippet on an addon-created handler that called methods on
-    a frame obtained via `self:GetParent()` → `prevented the call of the
-    secure function 'UNKNOWN()'`;
+  - a state-driver snippet on an addon-created handler calling methods on a
+    frame via `self:GetParent()` → `'UNKNOWN()'`;
   - a driver on the frame with a `self:Hide()`/`self:Show()` snippet →
-    `UNKNOWN()` again.
-  The current driver is the pure flip-bridge pattern: `RegisterStateDriver`
-  directly on `BonusActionBarFrame` (snippet `self` is the frame itself, the
-  same self-reference the client's own handlers use) with a snippet that uses
-  **only** `self:SetShown` + the marker `self:SetAttribute` — the ops the
-  flip bridge proves clean on this client. Condition `[bonusbar:0] → hidden,
-  else → shown` re-evaluates on events + the 0.2s driver throttle, so
-  client re-shows at combat transitions are re-hidden without any addon
-  call on the frame. If the frame is not a `SecureHandlerStateTemplate`, the
-  driver is inert and self-cleans (the client's delayed hide is the only
-  hide) — the marker attribute distinguishes the two cases at install.
+    `'UNKNOWN()'`;
+  - a driver on the frame with a **pure `self:SetShown`** snippet (the
+    flip-bridge ops) → `'UNKNOWN()'` still.
+  Conclusion: restricted snippets on this client may ONLY `SetAttribute`;
+  any `Hide`/`Show`/`SetShown` — even on `self` — taints.
+  **Current approach:** the guard hides `BonusActionBarFrame` **out of
+  combat only** (per-frame, in the same out-of-combat section that hides
+  `MainMenuBar` — the identical call has run for months with zero errors,
+  so out-of-combat protected calls are clean on this client). That keeps the
+  bar hidden whenever we're out of combat (covers out-of-combat unstealth;
+  during stealth the arc flip replaces the stock bar anyway). In combat the
+  bar cannot be hidden at all — the ~3s window is real and currently
+  diagnosed: the unstealth branch logs `bonusShown`/`mmbShown`/
+  `MainMenuBar.busy`/parent and probes visibility every 0.5s for 4s (Debug
+  to Chat) to determine whether the client's hide eventually fires, whether
+  `MainMenuBar.busy` is the gate (candidate root fix: clear it so the
+  client's hide takes the instant path), or whether it's a routing cache.
 - **`ChangeActionBarPage(1)`** on the same transition — empirically required
   for the in-combat unstealth display flip. The page never visibly moves and
   no event fires, but without it the bar froze on stealth skills when
