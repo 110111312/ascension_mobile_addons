@@ -693,10 +693,17 @@ end
 
 local function RefreshScatterButtons()
     if InCombatLockdown() then
-        -- Manual refresh: the full ActionButton_UpdateAction path calls
-        -- self:Show()/Hide() on the protected button (blocked in combat).
-        -- Icons are plain textures, so draw the icon directly. No field
-        -- writes on the secure button (that taints).
+        -- In combat the client's ActionButton_Update resolves self.action from
+        -- the actionpage attribute, but it can run BEFORE the bridge's state
+        -- driver updates that attribute (e.g. detected-in-stealth: the client
+        -- re-resolves self.action to the now-unusable stealth action, leaving
+        -- the tint grayed out even after the icon flips to the normal bar).
+        -- We can't call ActionButton_UpdateAction here (it Show()/Hide()s the
+        -- protected button; calling it from addon context would taint, unlike
+        -- the client's own secure event dispatch). So draw the icon, usability
+        -- tint, and cooldown ourselves from the CORRECT (attribute-resolved)
+        -- action. All targets are plain texture/cooldown regions — not
+        -- protected — so no taint, no field writes on the secure button.
         for i = 1, 12 do
             local btn = _G["ActionButton" .. i]
             if btn then
@@ -705,8 +712,40 @@ local function RefreshScatterButtons()
                 if tex then
                     icon:SetTexture(tex)
                     icon:Show()
+                    local isUsable, notEnoughMana = IsUsableAction(action)
+                    if isUsable then
+                        icon:SetVertexColor(1.0, 1.0, 1.0)
+                    elseif notEnoughMana then
+                        icon:SetVertexColor(0.5, 0.5, 1.0)
+                    else
+                        icon:SetVertexColor(0.4, 0.4, 0.4)
+                    end
+                    local nt = _G[btn:GetName() .. "NormalTexture"]
+                    if nt then
+                        if notEnoughMana then
+                            nt:SetVertexColor(0.5, 0.5, 1.0)
+                        else
+                            nt:SetVertexColor(1.0, 1.0, 1.0)
+                        end
+                    end
                 else
                     icon:Hide()
+                end
+                local cd = _G[btn:GetName() .. "Cooldown"]
+                if cd then
+                    local start, duration, enable = GetActionCooldown(action)
+                    -- Only draw the spiral when enable==1 (see GetActionCooldown
+                    -- in the API ref): duration>0 alone is not sufficient.
+                    if start and duration and duration > 0 and enable == 1 then
+                        if cd.start ~= start or cd.duration ~= duration then
+                            cd:SetCooldown(start, duration)
+                            cd.start, cd.duration = start, duration
+                        end
+                        if not cd:IsShown() then cd:Show() end
+                    else
+                        cd:Hide()
+                        cd.start, cd.duration = nil, nil
+                    end
                 end
             end
         end
