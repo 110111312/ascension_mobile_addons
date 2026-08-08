@@ -205,21 +205,24 @@ redraws from the attr-resolved page: icon texture, usability tints
 (`IsUsableAction` vertex colors — the old per-frame `RefreshScatterCombat`
 that did this was removed in phase 4; the event/poll-driven re-assert replaced
 it), and the cooldown (`GetActionCooldown` with `enable == 1`). The flash
-(casting/attack glow) is re-asserted **every frame** by `ReassertFlash()` in
+(attack glow) is re-asserted **every frame** by `ReassertFlash()` in
 the guard `OnUpdate` (runs in combat too, before the lockdown early-return):
 with `OnEvent` cleared the client's `ActionButton_UpdateFlash` never runs and
 cast events are unreliable on this server, so the `IsCurrentAction`-driven
 `stateflash` latched at 1 after a cast and the glow stuck forever. It
-recomputes from the attr-resolved action (`IsAttackAction`/`IsAutoRepeatAction`/
-`IsCurrentAction`) and `Show()/Hide()`s the Flash texture directly (plain
-texture region — taint-safe), so the glow turns off within a frame of the cast
-ending. It also clears a **latched checked state**: the client checks the
+recomputes from the attr-resolved action and `Show()/Hide()`s the Flash
+texture directly (plain texture region — taint-safe). Per user preference the
+red flash (`UI-QuickslotRed`) is **auto-attack / auto-shot only**
+(`IsAttackAction`/`IsAutoRepeatAction`) — it is NOT shown for spell casts
+(`IsCurrentAction`); the casting feedback is the checked-state ring below. It
+also clears a **latched checked state**: the client checks the
 button while casting (the casting highlight) but the uncheck runs via the
 OnEvent-driven `ActionButton_UpdateState`, which is cleared at apply — so the
 checked glow (`RoundButtonChecked`/`Border` — the "light yellow border" the
 user saw) stuck forever. `SetChecked(nil)` runs whenever the action is not
-current (outside the cast), making the glow transient like the flash
-(`SetChecked` is a plain state setter, not a protected call — taint-safe).
+currently being cast (`IsCurrentAction`), making the glow transient — shows
+during the cast, gone after (`SetChecked` is a plain state setter, not a
+protected call — taint-safe).
 `UNIT_SPELLCAST_START/STOP/SUCCEEDED` + `UNIT_SPELLCAST_CHANNEL_*`
 are also registered on `flipFrame` for immediate icon/tint/cooldown re-sync
 at cast boundaries (they fire on this server; the per-frame re-assert is the

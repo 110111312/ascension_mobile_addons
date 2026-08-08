@@ -815,7 +815,10 @@ local function ReassertFlash()
         local btn = _G["ActionButton" .. i]
         if btn then
             local action = ResolveScatterAction(btn, i)
-            local flash = IsAttackAction(action) or IsAutoRepeatAction(action) or IsCurrentAction(action)
+            -- Red flash: auto-attack / auto-shot ONLY (user preference — the
+            -- red UI-QuickslotRed glow is not shown for spell casts; the
+            -- casting feedback is the checked-state ring below).
+            local flash = IsAttackAction(action) or IsAutoRepeatAction(action)
             local fl = _G[btn:GetName() .. "Flash"]
             if fl then
                 if flash then
@@ -828,11 +831,11 @@ local function ReassertFlash()
             -- while casting (the casting highlight) but the uncheck runs via
             -- the OnEvent-driven ActionButton_UpdateState, which is cleared
             -- at apply — so the checked glow (RoundButtonChecked / Border)
-            -- sticks forever. Clear it whenever the action is not current
-            -- (outside the cast), so the glow is transient like the flash.
-            -- SetChecked is a plain state setter, not a protected call, so
-            -- this is taint-safe.
-            if not flash and btn:GetChecked() then btn:SetChecked(nil) end
+            -- sticks forever. Clear it whenever the action is not currently
+            -- being cast, so the glow is transient (shows during the cast,
+            -- gone after). SetChecked is a plain state setter, not a
+            -- protected call, so this is taint-safe.
+            if not IsCurrentAction(action) and btn:GetChecked() then btn:SetChecked(nil) end
         end
     end
 end
