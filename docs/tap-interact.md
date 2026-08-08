@@ -20,31 +20,38 @@ World clicks are client bindings, not addon-accessible frame handlers:
 | Left (BUTTON1) | `CAMERAORSELECTORMOVE` → `CameraOrSelectOrMoveStart/Stop` | hold = rotate camera, release = select target |
 | Right (BUTTON2) | `TURNORACTION` → `TurnOrActionStart/Stop` | hold = steer, release = interact (talk/loot/attack/use) |
 
-Both are marked "not customizable in the default UI" (`api/c-a.md`,
-`api/t.md`), and there is no CVar/API to swap the physical buttons. But
-`TurnOrActionStart/Stop` are plain callable functions, and
-`SetOverrideBindingClick()` can rebind a mouse button to simulate a click on
-a frame. So:
+Both are marked `hidden="true"` in `Bindings.xml` ("not customizable in the
+default UI"), and there is no CVar/API to swap the physical buttons.  But the
+binding system itself can be overridden, and `TURNORACTION` is a real binding
+command (`Bindings.xml:1276`, `runOnUp="true"`).  So:
 
-1. `SetOverrideBindingClick(catcher, false, "BUTTON1", "MobileUIClickCatcher", "LeftButton")`
-   rebinds left-click to simulate a click on a hidden 1x1 Button
-   (`api/s-e.md` "SetOverrideBindingClick").
-2. The binding only fires when the click is **not** consumed by a UI frame —
+1. `SetOverrideBinding(owner, false, "BUTTON1", "TURNORACTION")` rebinds
+   left-click to the right-click world interaction command
+   (`api/s-e.md` "SetOverrideBinding").
+2. The client executes the binding natively: `TurnOrActionStart()` on press,
+   `TurnOrActionStop()` on release — in **secure context**, so no Lua call
+   from addon code and no taint.
+3. The binding only fires when the click is **not** consumed by a UI frame —
    normal UI hit-testing wins, so action bars, bags, unit frames, minimap,
    chat bubble etc. keep their normal left-click behavior.
-3. The hidden button's `OnMouseDown`/`OnMouseUp` call `TurnOrActionStart()` /
-   `TurnOrActionStop()` — the exact pipeline the client uses for right-click
-   world interaction. Tap on NPC → talk. Tap on world objective → use it.
-   Hold (real mouse) → steer, then interact on release, mirroring right-click.
 
-None of these functions are marked protected in the wowprogramming reference,
-but the Ascension client **does** protect `TurnOrActionStart/Stop` — calling
-them from a plain (insecure) frame's handler raises
+### Why not call TurnOrActionStart() from a frame handler?
+
+The Ascension client **protects** `TurnOrActionStart/Stop` (the
+wowprogramming reference doesn't flag them, but the client raises
 `AddOn 'MobileUI' tainted the call of the secure function 'TurnOrActionStart()'`
-and the call is blocked.  The catcher therefore inherits
-`SecureHandlerClickTemplate` (FrameXML `SecureHandlers.xml`): scripts on a
-secure frame run in secure context, so the protected calls are allowed.  The
-override is set at `PLAYER_ENTERING_WORLD` and on toggle.
+and blocks the call).  Attempted workarounds that did **not** work in this
+client:
+
+- `SecureHandlerClickTemplate` frame with `OnMouseDown`/`OnMouseUp` — still
+  tainted.
+- Secure `_onclick` attribute snippets — the restricted environment
+  (`RestrictedEnvironment.lua`) does not expose `TurnOrActionStart`.
+- `securecall()` — only helps when called from *within* a secure
+  environment (`api/s-e.md` "securecall"), not from tainted addon code.
+
+Rebinding the button to the native binding command sidesteps all of it.
+The override is set at `PLAYER_ENTERING_WORLD` and on toggle.
 
 ## What changes / what doesn't
 
@@ -63,7 +70,7 @@ override is set at `PLAYER_ENTERING_WORLD` and on toggle.
 
 ## Revert / disable
 
-`/mui tap` toggles. Disabling calls `ClearOverrideBindings(catcher)`
+`/mui tap` toggles. Disabling calls `ClearOverrideBindings(owner)`
 (`api/c-l.md`), restoring native left-click targeting. Override bindings are
 temporary anyway — they never persist across reload/logout, and `Apply()` is
 re-run on every `PLAYER_ENTERING_WORLD`.
@@ -73,10 +80,14 @@ re-run on every `PLAYER_ENTERING_WORLD`.
 - `TurnOrActionStart/Stop` — `api/t.md` (TURNORACTION binding, right-click).
 - `CameraOrSelectOrMoveStart/Stop` — `api/c-a.md` (CAMERAORSELECTORMOVE
   binding, left-click).
-- `SetOverrideBindingClick` / `SetBindingClick` — `api/s-e.md`.
+- `SetOverrideBinding` / `SetOverrideBindingClick` / `SetBindingClick` —
+  `api/s-e.md`.
 - `ClearOverrideBindings` — `api/c-l.md`.
-- `GetMouseButtonClicked` — `api/g-get-m.md` (used to identify the button in
-  click handlers; not needed here since the catcher only registers left).
+- `Bindings.xml` (FrameXML mirror) — `TURNORACTION` at line 1276,
+  `CAMERAORSELECTORMOVE` at line 1283, both `hidden="true"` `runOnUp="true"`.
+- `SecureHandlerTemplates.xml` / `SecureHandlers.lua` /
+  `RestrictedEnvironment.lua` (FrameXML mirror) — why the secure-frame and
+  `_onclick`-snippet routes can't call `TurnOrActionStart`.
 - No `SwapMouseButtons`-style CVar exists in 3.3.5a. A full left/right swap
   (including camera) is not possible from an addon — the OS/Artemis side
   would be the place for that.

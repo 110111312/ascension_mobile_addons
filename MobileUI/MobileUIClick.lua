@@ -3,17 +3,28 @@
 -- On Artemis (moonlight fork) a tap sends left-click and a hold sends
 -- right-click.  In WoW, right-click is the workhorse for world interaction
 -- (talk to NPCs, use quest objects) while left-click only targets.  This
--- module intercepts left-click on the 3-D world and re-routes it through the
--- right-click interaction pipeline, so a tap on an NPC talks to it and a tap
--- on a world objective uses it.
+-- module rebinds the left mouse button to the right-click world interaction
+-- binding, so a tap on an NPC talks to it and a tap on a world objective
+-- uses it.
 --
--- Mechanism: SetOverrideBindingClick() rebinds BUTTON1 (left mouse button)
--- to simulate a click on a hidden Button.  The binding only fires when the
--- click is NOT consumed by a UI frame (normal UI hit-testing still wins), so
--- action bars, bags, unit frames, etc. keep their normal left-click behavior.
--- The hidden button's OnMouseDown/OnMouseUp then drive TurnOrActionStart/Stop
--- — the exact API the client uses for right-click world interaction
--- (reference: api/t.md "TurnOrActionStart/Stop", "TURNORACTION" binding).
+-- Mechanism: SetOverrideBinding() rebinds BUTTON1 (left mouse button) to the
+-- TURNORACTION binding command (Bindings.xml:1276, hidden="true",
+-- runOnUp="true"): TurnOrActionStart() on press, TurnOrActionStop() on
+-- release — the exact pipeline the client uses for right-click world
+-- interaction.  The client executes binding commands natively in secure
+-- context, so there is no Lua call and no taint.
+--
+-- Why not call TurnOrActionStart() from a frame handler?  The Ascension
+-- client protects TurnOrActionStart/Stop (the wowprogramming reference
+-- doesn't flag them, but the client taints insecure callers).  A
+-- SecureHandlerClickTemplate frame's OnMouseDown/OnMouseUp still tainted in
+-- this client, and the restricted environment used by secure _onclick
+-- snippets (RestrictedEnvironment.lua) does not expose TurnOrActionStart.
+-- Rebinding the button to the native binding command sidesteps all of it.
+--
+-- The binding only fires when the click is NOT consumed by a UI frame
+-- (normal UI hit-testing still wins), so action bars, bags, unit frames,
+-- etc. keep their normal left-click behavior.
 --
 -- What this does NOT cover: left-click targeting is replaced (tap on a unit
 -- now interacts/attacks it instead of just selecting it), and left-click on
@@ -24,36 +35,13 @@ local ADDON = "MobileUI"
 
 MobileUIClick = {}
 
-local catcher -- hidden Button that receives the simulated clicks
+local owner -- any frame that owns the override binding
 
--- ============================================================================
--- Hidden click catcher
--- ============================================================================
--- A 1x1 hidden Button.  Real mouse events never reach it (hidden frames are
--- skipped by hit-testing), but SetOverrideBindingClick simulates clicks on it
--- directly through the binding system, so visibility is irrelevant.
---
--- It MUST inherit SecureHandlerClickTemplate: TurnOrActionStart/Stop are
--- protected in the Ascension client (the wowprogramming reference doesn't flag
--- them, but the client taints insecure callers).  Scripts on a secure frame
--- run in secure context, so the protected calls are allowed.
-
-local function CreateCatcher()
-    if catcher then return end
-    catcher = CreateFrame("Button", "MobileUIClickCatcher", UIParent, "SecureHandlerClickTemplate")
-    catcher:SetSize(1, 1)
-    catcher:RegisterForClicks("LeftButtonDown", "LeftButtonUp")
-    catcher:SetScript("OnMouseDown", function(self, button)
-        if button == "LeftButton" then
-            TurnOrActionStart()
-        end
-    end)
-    catcher:SetScript("OnMouseUp", function(self, button)
-        if button == "LeftButton" then
-            TurnOrActionStop()
-        end
-    end)
-    catcher:Hide()
+local function GetOwner()
+    if not owner then
+        owner = CreateFrame("Frame", "MobileUIClickOwner", UIParent)
+    end
+    return owner
 end
 
 -- ============================================================================
@@ -61,18 +49,18 @@ end
 -- ============================================================================
 
 function MobileUIClick:Apply()
-    CreateCatcher()
     -- Rebind the left mouse button: instead of the default
-    -- CAMERAORSELECTORMOVE (targeting), simulate a left-click on our hidden
-    -- catcher, which runs the right-click interaction pipeline.
-    SetOverrideBindingClick(catcher, false, "BUTTON1", "MobileUIClickCatcher", "LeftButton")
-    MobileUI_Debug("Tap=Interact: BUTTON1 override binding set")
+    -- CAMERAORSELECTORMOVE (targeting), execute the TURNORACTION binding
+    -- (right-click world interaction).  Executed natively by the client in
+    -- secure context — no Lua call, no taint.
+    SetOverrideBinding(GetOwner(), false, "BUTTON1", "TURNORACTION")
+    MobileUI_Debug("Tap=Interact: BUTTON1 -> TURNORACTION override set")
 end
 
 function MobileUIClick:Revert()
-    if catcher then
-        ClearOverrideBindings(catcher)
-        MobileUI_Debug("Tap=Interact: BUTTON1 override binding cleared")
+    if owner then
+        ClearOverrideBindings(owner)
+        MobileUI_Debug("Tap=Interact: BUTTON1 override cleared")
     end
 end
 
