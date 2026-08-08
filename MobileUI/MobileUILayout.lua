@@ -465,7 +465,10 @@ local function ApplyActionBar()
             -- actions) and we can't Show them back (protected). With
             -- showgrid=1 the Update hides the cooldown region instead, so
             -- the button stays visible for our per-frame redraw.
-            pcall(function() btn:SetAttribute("showgrid", 1) end)
+            -- flipLite: skip this — let the client manage grid normally.
+            if not (MobileDB and MobileDB.flipLite) then
+                pcall(function() btn:SetAttribute("showgrid", 1) end)
+            end
             btn:SetScript("OnEnter", NoActionTooltipOnEnter)
             -- Stop the client from dispatching this button's update events.
             -- The client re-renders reparented buttons from their stale
@@ -477,7 +480,13 @@ local function ApplyActionBar()
             -- the client never touches the button: ApplyFlip (out of combat,
             -- full stock update) and the per-frame combat redraw own the
             -- display instead.
-            btn:SetScript("OnEvent", nil)
+            -- flipLite: leave OnEvent intact to test whether the taint (caused
+            -- by field writes since removed) is still present. If the client's
+            -- own Update renders correctly with no taint errors, the per-frame
+            -- combat redraw + showgrid + OnEvent-clearing are all deletable.
+            if not (MobileDB and MobileDB.flipLite) then
+                btn:SetScript("OnEvent", nil)
+            end
             MobileUI_Debug("  ActionButton" .. i .. " skinned")
         else
             MobileUI_Debug("  ActionButton" .. i .. " NOT FOUND")
@@ -971,7 +980,10 @@ function MobileUILayout.EnsureFlipWatcher()
         -- In combat, overwrite any stale re-render the buttons just did in
         -- this same dispatch (icons, un-gray, cooldown, flash). Out of
         -- combat the client's own updates are correct — leave them alone.
-        if InCombatLockdown() then RefreshScatterCombat() end
+        -- flipLite: the client owns the display, so skip our redraw.
+        if InCombatLockdown() and not (MobileDB and MobileDB.flipLite) then
+            RefreshScatterCombat()
+        end
     end)
 end
 
@@ -1243,7 +1255,11 @@ local function ApplyHideFrames()
             -- when combat ends. (The flip poll above is pure Lua and stays
             -- active in combat.)
             if InCombatLockdown() then
-                RefreshScatterCombat()
+                -- flipLite: the client owns the display, so skip our redraw;
+                -- keep the early return so we don't enforce HIDE_FRAMES mid-combat.
+                if not (MobileDB and MobileDB.flipLite) then
+                    RefreshScatterCombat()
+                end
                 return
             end
             for _, name in ipairs(HIDE_FRAMES) do

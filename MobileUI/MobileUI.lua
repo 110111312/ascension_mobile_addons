@@ -19,6 +19,10 @@ local DEFAULTS = {
     lookSpeed    = 90,    -- cameraYawMoveSpeed; 90 = WoW min; lower = less sensitive
     layoutEnabled = true, -- true = apply the 5-point mobile layout revamp
     debug        = false, -- true = also print MobileUI_Debug entries to chat
+    flipLite     = false, -- true = experimental: trust the client's own button
+                          -- updates (don't clear OnEvent/showgrid, skip our
+                          -- per-frame combat redraw). Tests whether the taint
+                          -- that forced the flip cascade is still present.
 }
 
 -- ============================================================================
@@ -194,6 +198,10 @@ function MobileUI_OptionsOnShow(panel)
     if lookSlider then lookSlider:SetValue(MobileDB.lookSpeed or 90) end
     local layoutCheck = _G[name .. "LayoutCheck"]
     if layoutCheck then layoutCheck:SetChecked(MobileDB.layoutEnabled) end
+    local debugCheck = _G[name .. "DebugCheck"]
+    if debugCheck then debugCheck:SetChecked(MobileDB.debug) end
+    local flipLiteCheck = _G[name .. "FlipLiteCheck"]
+    if flipLiteCheck then flipLiteCheck:SetChecked(MobileDB.flipLite) end
 end
 
 function MobileUI_OptionsOnLookSpeedChanged(value)
@@ -209,5 +217,34 @@ function MobileUI_OptionsOnLayoutChanged(checked)
         MobileUILayout:Apply()
     else
         MobileUILayout:Revert()
+    end
+end
+
+-- Debug-to-chat toggle (persisted). Enables the flip event/poll tracing in
+-- MobileUILayout without a slash command.
+function MobileUI_OptionsOnDebugChanged(checked)
+    if not MobileDB then return end
+    MobileDB.debug = checked and true or false
+    print("|cff00ccff[MobileUI]|r Debug-to-chat " ..
+        (MobileDB.debug and "ON" or "OFF") .. ".")
+end
+
+-- Flip Lite toggle (persisted). Re-applies the layout so the apply-time
+-- OnEvent/showgrid gating takes effect. Must run out of combat (the
+-- scatter buttons are protected); if toggled mid-combat it waits until you
+-- leave combat and re-apply manually.
+function MobileUI_OptionsOnFlipLiteChanged(checked)
+    if not MobileDB then return end
+    MobileDB.flipLite = checked and true or false
+    print("|cff00ccff[MobileUI]|r Flip Lite " ..
+        (MobileDB.flipLite and "ON" or "OFF") .. ".")
+    if not MobileDB.layoutEnabled then return end
+    if InCombatLockdown() then
+        print("|cff00ccff[MobileUI]|r In combat — toggle layout off/on after combat to apply.")
+        return
+    end
+    if MobileUILayout then
+        MobileUILayout:Revert()
+        MobileUILayout:Apply()
     end
 end

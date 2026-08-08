@@ -70,6 +70,38 @@
                     </OnClick>
                 </Scripts>
             </CheckButton>
+
+            <CheckButton name="$parentDebugCheck" inherits="OptionsCheckButtonTemplate">
+                <Anchors>
+                    <Anchor point="TOPLEFT" relativeTo="$parentLayoutCheck" relativePoint="BOTTOMLEFT">
+                        <Offset><AbsDimension x="0" y="-8"/></Offset>
+                    </Anchor>
+                </Anchors>
+                <Scripts>
+                    <OnLoad>
+                        _G[self:GetName().."Text"]:SetText("Debug to Chat")
+                    </OnLoad>
+                    <OnClick>
+                        MobileUI_OptionsOnDebugChanged(self:GetChecked())
+                    </OnClick>
+                </Scripts>
+            </CheckButton>
+
+            <CheckButton name="$parentFlipLiteCheck" inherits="OptionsCheckButtonTemplate">
+                <Anchors>
+                    <Anchor point="TOPLEFT" relativeTo="$parentDebugCheck" relativePoint="BOTTOMLEFT">
+                        <Offset><AbsDimension x="0" y="-8"/></Offset>
+                    </Anchor>
+                </Anchors>
+                <Scripts>
+                    <OnLoad>
+                        _G[self:GetName().."Text"]:SetText("Flip Lite (experimental)")
+                    </OnLoad>
+                    <OnClick>
+                        MobileUI_OptionsOnFlipLiteChanged(self:GetChecked())
+                    </OnClick>
+                </Scripts>
+            </CheckButton>
         </Frames>
     </Frame>
 
