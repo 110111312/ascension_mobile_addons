@@ -891,22 +891,32 @@ end
 -- mid-combat ("AddOn 'MobileUI' prevented the call of the secure function
 -- 'BonusActionBarFrame:Hide()'"). Same pattern as the flip bridge: a
 -- SecureHandlerStateTemplate frame of our own drives the visibility, and its
--- _onstate snippet calls BonusActionBarFrame:Hide()/Show() from a SECURE
--- context (state-driver manager + restricted closure), which does not taint.
+-- _onstate snippet calls Hide()/Show() from a SECURE context (state-driver
+-- manager + restricted closure), which does not taint.
 -- Condition: [bonusbar:0] -> hide (no bonus bar active), else -> show.
+--
+-- The handler is created as a CHILD of BonusActionBarFrame so the snippet can
+-- reach the protected frame via self:GetParent() — restricted (secure) snippet
+-- environments cannot index arbitrary globals (the first attempt referenced
+-- BonusActionBarFrame by name and failed with "attempt to index global
+-- 'BonusActionBarFrame' (a nil value)"; only whitelisted globals are visible
+-- there, and frame methods on self always are).
 local bonusBarDriver
 function MobileUILayout.InstallBonusBarDriver()
     if bonusBarDriver or not BonusActionBarFrame then return end
-    local h = CreateFrame("Frame", nil, UIParent, "SecureHandlerStateTemplate")
+    local h = CreateFrame("Frame", nil, BonusActionBarFrame, "SecureHandlerStateTemplate")
     h:SetSize(1, 1)
-    h:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
+    h:SetPoint("TOPLEFT", BonusActionBarFrame, "TOPLEFT", 0, 0)
     h:Show()
     local ok = pcall(function()
         h:SetAttribute("_onstate-bonushide", [[
-            if newstate == "1" then
-                BonusActionBarFrame:Hide()
-            else
-                BonusActionBarFrame:Show()
+            local target = self:GetParent()
+            if target then
+                if newstate == "1" then
+                    target:Hide()
+                else
+                    target:Show()
+                end
             end
         ]])
         RegisterStateDriver(h, "bonushide", "[bonusbar:0] 1; 0")
