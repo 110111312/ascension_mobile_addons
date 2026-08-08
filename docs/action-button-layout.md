@@ -152,20 +152,25 @@ slots even though the UI looked normal (display flip is pure Lua and kept
 working — hence "bar flips back but keys dead"). Fixes on the unstealth
 transition (bonus offset 1→0):
 
-- **Hide `BonusActionBarFrame` via a secure state driver** — one-shot at the
-  transition (the driver's `[bonusbar:0] → hide` condition re-evaluates on
-  events + the 0.2s driver throttle, re-hiding it even if the client re-shows
-  the bar at combat transitions). `BonusActionBarFrame` is a **child of
+- **Leave `BonusActionBarFrame` entirely to the client** — no addon
+  manipulation of any kind. `BonusActionBarFrame` is a **child of
   `MainMenuBar`, which is a protected frame — so `BonusActionBarFrame` is
-  protected too**. Calling `Hide()` on it from addon context (as an earlier
-  version of this code did in the layout guard) **taints** it, after which the
-  client's own secure `HideBonusActionBar()` is blocked mid-combat
-  (`AddOn 'MobileUI' prevented the call of the secure function
-  'BonusActionBarFrame:Hide()'`). The driver mirrors the flip-bridge pattern:
-  a `SecureHandlerStateTemplate` frame of our own drives the visibility, and
-  its `_onstate` snippet calls `BonusActionBarFrame:Hide()/Show()` from a
-  secure context (state-driver manager + restricted closure), which does not
-  taint.
+  protected too**. Every attempt to hide it from the addon tainted it on this
+  client and blocked the client's own secure `HideBonusActionBar()`:
+  - addon-context `Hide()` (the original layout-guard approach) →
+    `AddOn 'MobileUI' prevented the call of the secure function
+    'BonusActionBarFrame:Hide()'`;
+  - a state-driver snippet on an addon-created handler that called methods on
+    a frame obtained via `self:GetParent()` → `prevented the call of the
+    secure function 'UNKNOWN()'`;
+  - a state driver registered directly on the frame with a `self`-referencing
+    snippet → `UNKNOWN()` again.
+  The client's own `HideBonusActionBar()` **does fire on unstealth** (the
+  blocked-call errors above prove it — the calls were only blocked because the
+  frame was tainted). With zero addon touch, it hides the bar itself, keys
+  route back to the normal bar, and there is no taint. The unstealth branch in
+  the guard poll keeps only `ChangeActionBarPage(1)` (see below) and the
+  `bonusShown` diagnostic read (`IsShown()` is read-only, safe).
 - **`ChangeActionBarPage(1)`** on the same transition — empirically required
   for the in-combat unstealth display flip. The page never visibly moves and
   no event fires, but without it the bar froze on stealth skills when
