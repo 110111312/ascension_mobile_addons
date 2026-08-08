@@ -11,5 +11,6 @@ MobileUIChat.lua
 MobileUIClick.lua
 MobileUISell.lua
 MobileUIBuy.lua
+MobileUIWorldMap.lua
 MobileUILayout.lua
 MobileUIOptions.xml
