@@ -700,10 +700,16 @@ local function RefreshScatterButtons()
         -- the tint grayed out even after the icon flips to the normal bar).
         -- We can't call ActionButton_UpdateAction here (it Show()/Hide()s the
         -- protected button; calling it from addon context would taint, unlike
-        -- the client's own secure event dispatch). So draw the icon, usability
-        -- tint, and cooldown ourselves from the CORRECT (attribute-resolved)
-        -- action. All targets are plain texture/cooldown regions — not
-        -- protected — so no taint, no field writes on the secure button.
+        -- the client's own secure event dispatch). So we recompute the icon
+        -- texture + usability tint ourselves from the CORRECT (attribute-
+        -- resolved) action. Only TEXTURE regions (icon + NormalTexture) --
+        -- SetTexture/SetVertexColor/Show on those is taint-safe. We do NOT touch
+        -- the Cooldown FRAME: cd:SetCooldown/cd:Show/cd:Hide taint the button,
+        -- after which the client's own ActionButton_Update self:Show() gets
+        -- blocked ("AddOn 'MobileUI' prevented ActionButtonN:Show()"). The
+        -- client owns the cooldown via OnEvent; it may briefly lag the
+        -- actionpage attribute during a flip but self-corrects on the next
+        -- ACTIONBAR_UPDATE_COOLDOWN.
         for i = 1, 12 do
             local btn = _G["ActionButton" .. i]
             if btn then
@@ -730,22 +736,6 @@ local function RefreshScatterButtons()
                     end
                 else
                     icon:Hide()
-                end
-                local cd = _G[btn:GetName() .. "Cooldown"]
-                if cd then
-                    local start, duration, enable = GetActionCooldown(action)
-                    -- Only draw the spiral when enable==1 (see GetActionCooldown
-                    -- in the API ref): duration>0 alone is not sufficient.
-                    if start and duration and duration > 0 and enable == 1 then
-                        if cd.start ~= start or cd.duration ~= duration then
-                            cd:SetCooldown(start, duration)
-                            cd.start, cd.duration = start, duration
-                        end
-                        if not cd:IsShown() then cd:Show() end
-                    else
-                        cd:Hide()
-                        cd.start, cd.duration = nil, nil
-                    end
                 end
             end
         end
