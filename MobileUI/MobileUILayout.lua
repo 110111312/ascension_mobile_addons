@@ -180,6 +180,7 @@ local function SaveOriginals()
                 pushedTex = pt and pt:GetTexture(),
                 onEnter = btn:GetScript("OnEnter"),
                 onEvent = btn:GetScript("OnEvent"),
+                showgrid = btn:GetAttribute("showgrid") or 0,
             }
         end
     end
@@ -459,19 +460,26 @@ local function ApplyActionBar()
             if nm then nm:Hide() end
             if hotkey then HOTKEY_FRAMES[#HOTKEY_FRAMES+1] = hotkey end
             if nm then HOTKEY_FRAMES[#HOTKEY_FRAMES+1] = nm end
-            -- showgrid: left at the client default. We no longer force
-            -- showgrid=1 — the client manages button visibility normally
-            -- now that OnEvent is intact (no per-frame redraw to keep
-            -- buttons visible for).
+            -- showgrid=1: keep empty buttons visible. With OnEvent cleared
+            -- the client never hides them via its update, but showgrid also
+            -- guards against non-event client code paths that hide empty slots.
+            btn:SetAttribute("showgrid", 1)
             btn:SetScript("OnEnter", NoActionTooltipOnEnter)
-            -- OnEvent: left intact. The client's own ActionButton_Update
-            -- resolves the action via the bridge's actionpage attribute and
-            -- renders icon/tint/cooldown/flash correctly. Confirmed in-game
-            -- (phase 3): with OnEvent intact and no field writes on the
-            -- secure buttons, there is NO taint — the taint that forced the
-            -- old OnEvent-clearing was caused by field writes (self.action /
-            -- isBonus) since removed. We no longer clear OnEvent or run a
-            -- per-frame combat redraw.
+            -- OnEvent CLEARED: the client's ActionButton_Update calls
+            -- self:Show()/self:Hide() on these reparented buttons. On THIS
+            -- client that call is blocked mid-combat once the button is
+            -- tainted by our display ops (SetVertexColor on the icon/Normal-
+            -- Texture taints the button -- confirmed in-game: phase 4 left
+            -- OnEvent intact and saw no taint for stealth toggles, but the
+            -- detected-in-combat form transition triggers a self:Show() that
+            -- IS blocked: "prevented the call of the secure function
+            -- 'ActionButtonN:Show()'"). Clearing OnEvent stops the client
+            -- from dispatching those updates at all, so the blocked Show/Hide
+            -- never happens. We own the display via RefreshScatterButtons
+            -- (event/poll-driven, not per-frame -- the cooldown spiral is
+            -- widget-internal after SetCooldown, so event-driven sync is
+            -- enough).
+            btn:SetScript("OnEvent", nil)
             MobileUI_Debug("  ActionButton" .. i .. " skinned")
         else
             MobileUI_Debug("  ActionButton" .. i .. " NOT FOUND")
@@ -556,6 +564,7 @@ local function RevertActionBar()
             if nm and sv.nameShown then nm:Show() end
             btn:SetScript("OnEnter", sv.onEnter)
             btn:SetScript("OnEvent", sv.onEvent)
+            btn:SetAttribute("showgrid", sv.showgrid or 0)
         end
     end
     -- Revert MultiBarBottomLeft buttons (spots 11-15)
@@ -618,9 +627,11 @@ end
 --     buttons from their stale self.action: the buttons' OnEvent is
 --     cleared at apply (the client never dispatches their updates — which
 --     also stops its Show()/Hide() from being blocked on our tainted
---     buttons), showgrid=1 keeps its Update from hiding them, and a
---     per-frame combat re-assert redraws icon/color/cooldown/flash from
---     the attr page (usability tints computed from the CORRECT action).
+--     buttons), showgrid=1 keeps its Update from hiding them, and an
+--     event/poll-driven re-assert (RefreshScatterButtons on flipFrame events
+--     + guard poll) redraws icon/tint/cooldown from the attr page (usability
+--     tints computed from the CORRECT action). NOT per-frame: the cooldown
+--     spiral is widget-internal after SetCooldown.
 local flipFrame
 
 -- The CLIENT owns the stance->bar mapping; we only mirror it. Generic rules
@@ -693,23 +704,23 @@ end
 
 local function RefreshScatterButtons()
     if InCombatLockdown() then
-        -- In combat the client's ActionButton_Update resolves self.action from
-        -- the actionpage attribute, but it can run BEFORE the bridge's state
-        -- driver updates that attribute (e.g. detected-in-stealth: the client
-        -- re-resolves self.action to the now-unusable stealth action, leaving
-        -- the tint grayed out even after the icon flips to the normal bar).
-        -- We can't call ActionButton_UpdateAction here (it Show()/Hide()s the
-        -- protected button; calling it from addon context would taint, unlike
-        -- the client's own secure event dispatch). So we recompute the icon
-        -- texture + usability tint ourselves from the CORRECT (attribute-
-        -- resolved) action. Only TEXTURE regions (icon + NormalTexture) --
-        -- SetTexture/SetVertexColor/Show on those is taint-safe. We do NOT touch
-        -- the Cooldown FRAME: cd:SetCooldown/cd:Show/cd:Hide taint the button,
-        -- after which the client's own ActionButton_Update self:Show() gets
-        -- blocked ("AddOn 'MobileUI' prevented ActionButtonN:Show()"). The
-        -- client owns the cooldown via OnEvent; it may briefly lag the
-        -- actionpage attribute during a flip but self-corrects on the next
-        -- ACTIONBAR_UPDATE_COOLDOWN.
+        -- OnEvent is CLEARED at apply (see ApplyActionBar), so the client
+        -- never dispatches ActionButton_Update on these buttons -- which means
+        -- it never calls self:Show()/self:Hide() (blocked on our tainted
+        -- buttons) and never renders icon/tint/cooldown. We own the display:
+        -- icon texture, usability tint, and cooldown, all from the CORRECT
+        -- (attribute-resolved) action via ResolveScatterAction.
+        --
+        -- Taint: SetVertexColor on the icon/NormalTexture and SetCooldown on
+        -- the Cooldown frame all taint the button. This is SAFE because OnEvent
+        -- is cleared: the client never calls self:Show() on the tainted button,
+        -- so the taint never surfaces as a blocked-call error. This is the same
+        -- approach the original code used (minus the per-frame cascade).
+        --
+        -- Trigger: event-driven (flipFrame OnEvent: UPDATE_BONUS_ACTIONBAR,
+        -- UPDATE_SHAPESHIFT_FORM, ACTIONBAR_UPDATE_COOLDOWN, etc.) plus the
+        -- 0.25s guard poll. NOT per-frame -- the cooldown spiral animation is
+        -- widget-internal after SetCooldown, so event-driven re-sync is enough.
         for i = 1, 12 do
             local btn = _G["ActionButton" .. i]
             if btn then
@@ -732,6 +743,26 @@ local function RefreshScatterButtons()
                             nt:SetVertexColor(0.5, 0.5, 1.0)
                         else
                             nt:SetVertexColor(1.0, 1.0, 1.0)
+                        end
+                    end
+                    -- Cooldown: we own this (OnEvent cleared, the client
+                    -- won't update it). SetCooldown starts the widget's
+                    -- internal spiral animation; ACTIONBAR_UPDATE_COOLDOWN
+                    -- events (flipFrame registers them) re-trigger
+                    -- RefreshScatterButtons to re-sync. Taints the button, but
+                    -- with OnEvent cleared the client never calls self:Show().
+                    local cd = _G[btn:GetName() .. "Cooldown"]
+                    if cd then
+                        local start, duration, enable = GetActionCooldown(action)
+                        if start and duration and duration > 0 and enable == 1 then
+                            if cd.start ~= start or cd.duration ~= duration then
+                                cd:SetCooldown(start, duration)
+                                cd.start, cd.duration = start, duration
+                            end
+                            if not cd:IsShown() then cd:Show() end
+                        else
+                            cd:Hide()
+                            cd.start, cd.duration = nil, nil
                         end
                     end
                 else
@@ -850,14 +881,20 @@ function MobileUILayout.UninstallFlipBridge()
     end
 end
 
--- Per-frame combat display redraw REMOVED (phase 4): the client owns the
--- scatter buttons' display now that their OnEvent is left intact. The
--- SecureStateDriver bridge (above) writes the actionpage attribute in
--- combat; the client's own ActionButton_Update (re-fired on
--- UPDATE_BONUS_ACTIONBAR / UPDATE_SHAPESHIFT_FORM, confirmed firing on
--- Ascension) resolves the correct action and renders icon/tint/cooldown/
--- flash itself — including the auto-attack blink (IsAttackAction +
--- IsAutoRepeatAction + IsCurrentAction, wider than our reimplementation).
+-- Per-frame combat display redraw REMOVED: the old RefreshScatterCombat ran
+-- every frame to own the display in combat. We now use the existing
+-- RefreshScatterButtons (event/poll-driven) for the same job -- icon texture,
+-- usability tint, and cooldown, all from the attribute-resolved action. The
+-- cooldown spiral animation is widget-internal after SetCooldown, so
+-- event-driven re-sync (ACTIONBAR_UPDATE_COOLDOWN + guard poll) is sufficient.
+-- Flash (auto-attack blink) is NOT re-asserted -- the user has not reported
+-- it as an issue; can be added if needed.
+--
+-- The SecureStateDriver bridge (below) writes the actionpage attribute in
+-- combat; our RefreshScatterButtons reads it to resolve the correct action.
+-- OnEvent is CLEARED (see ApplyActionBar) to prevent the client's
+-- ActionButton_Update from calling self:Show()/self:Hide() on our tainted
+-- buttons mid-combat.
 
 function MobileUILayout.ApplyFlip()
     if not MobileDB or not MobileDB.layoutEnabled then return end
@@ -905,18 +942,18 @@ function MobileUILayout.EnsureFlipWatcher()
     flipFrame:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN")
     flipFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
     flipFrame:SetScript("OnEvent", function(self, event, ...)
-        -- Combat-safe: ApplyFlip only draws icon textures (plain texture
-        -- regions, no secure/protected calls). The actionpage attribute is
-        -- owned by the SecureStateDriver bridge above, set independently of
-        -- this handler.
+        -- Combat-safe: ApplyFlip only touches non-protected regions (icon
+        -- texture, NormalTexture vertex color, Cooldown frame). These taint
+        -- the button, but OnEvent is cleared at apply so the client never
+        -- calls self:Show()/self:Hide() on the tainted button mid-combat.
+        -- The actionpage attribute is owned by the SecureStateDriver bridge.
         MobileUI_Debug(string.format("Flip evt: %s off=%d page=%d combat=%d",
             event, GetBonusBarOffset() or 0, GetActionBarPage() or 1,
             InCombatLockdown() and 1 or 0))
         MobileUILayout.ApplyFlip()
-        -- The client owns the scatter display (OnEvent intact): its own
-        -- ActionButton_Update re-renders on these events via the bridge's
-        -- actionpage attribute. ApplyFlip mirrors/logs the state; no
-        -- per-frame redraw is needed.
+        -- We own the scatter display (OnEvent cleared): RefreshScatterButtons
+        -- redraws icon/tint/cooldown from the bridge's actionpage attribute.
+        -- No per-frame redraw needed -- event/poll-driven is sufficient.
     end)
 end
 
@@ -1187,9 +1224,10 @@ local function ApplyHideFrames()
             -- resumes when combat ends. (The flip poll above is pure Lua and
             -- stays active in combat.)
             if InCombatLockdown() then
-                -- The client owns the scatter display (OnEvent intact); no
-                -- per-frame redraw. Keep the early return so we don't enforce
-                -- HIDE_FRAMES on protected frames mid-combat.
+                -- OnEvent is cleared on the scatter buttons, so the client
+                -- doesn't dispatch their updates mid-combat. Keep the early
+                -- return so we don't enforce HIDE_FRAMES on protected frames
+                -- mid-combat. The flip poll above (pure Lua) stays active.
                 return
             end
             for _, name in ipairs(HIDE_FRAMES) do
