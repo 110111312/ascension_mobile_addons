@@ -768,6 +768,24 @@ local function RefreshScatterButtons()
                 else
                     icon:Hide()
                 end
+                -- Flash (casting/attack glow): the client's UpdateFlash never
+                -- runs here (OnEvent cleared) and the old RefreshScatterCombat
+                -- flash block was deleted in Phase 4, so the stateflash
+                -- attribute latches at 1 after a cast and the golden border
+                -- sticks forever. Re-assert it from the SAME attribute-
+                -- resolved action as the icon: Show while casting/attacking/
+                -- repeating, Hide otherwise. Flash is a plain texture region,
+                -- so Show/Hide is taint-safe (SetVertexColor/SetCooldown are
+                -- the tainting ops, not texture Show/Hide).
+                local fl = _G[btn:GetName() .. "Flash"]
+                if fl then
+                    local flash = IsAttackAction(action) or IsAutoRepeatAction(action) or IsCurrentAction(action)
+                    if flash then
+                        if not fl:IsShown() then fl:Show() end
+                    else
+                        if fl:IsShown() then fl:Hide() end
+                    end
+                end
             end
         end
         -- Diagnostic: which page-1 slots actually have content, and which
@@ -796,6 +814,21 @@ local function RefreshScatterButtons()
                 local ok, err = pcall(ActionButton_UpdateAction, btn)
                 if not ok then
                     MobileUI_Debug("Flip: ActionButton" .. i .. " update failed: " .. tostring(err))
+                end
+                -- Flash re-assert (same as the in-combat branch): UpdateAction's
+                -- internal UpdateFlash uses possibly-stale self.action and only
+                -- sets the stateflash attribute; our direct texture Show/Hide
+                -- below is authoritative and uses the attribute-resolved
+                -- action, so the casting glow can't latch on.
+                local action = ResolveScatterAction(btn, i)
+                local fl = _G[btn:GetName() .. "Flash"]
+                if fl then
+                    local flash = IsAttackAction(action) or IsAutoRepeatAction(action) or IsCurrentAction(action)
+                    if flash then
+                        if not fl:IsShown() then fl:Show() end
+                    else
+                        if fl:IsShown() then fl:Hide() end
+                    end
                 end
             end
         end
@@ -941,6 +974,15 @@ function MobileUILayout.EnsureFlipWatcher()
     flipFrame:RegisterEvent("ACTIONBAR_UPDATE_USABLE")
     flipFrame:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN")
     flipFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
+    -- Cast boundaries: the flash (golden casting glow) is re-asserted by
+    -- RefreshScatterButtons from IsCurrentAction. These events guarantee a
+    -- refresh at cast start AND cast end even for spells with no cooldown
+    -- (which fire no ACTIONBAR_UPDATE_COOLDOWN), so the glow can't latch on.
+    flipFrame:RegisterEvent("UNIT_SPELLCAST_START")
+    flipFrame:RegisterEvent("UNIT_SPELLCAST_STOP")
+    flipFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+    flipFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_START")
+    flipFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
     flipFrame:SetScript("OnEvent", function(self, event, ...)
         -- Combat-safe: ApplyFlip only touches non-protected regions (icon
         -- texture, NormalTexture vertex color, Cooldown frame). These taint

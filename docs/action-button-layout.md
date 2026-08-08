@@ -204,10 +204,17 @@ widget-internal after `SetCooldown`, so event-driven re-sync is enough. It
 redraws from the attr-resolved page: icon texture, usability tints
 (`IsUsableAction` vertex colors — the old per-frame `RefreshScatterCombat`
 that did this was removed in phase 4; the event/poll-driven re-assert replaced
-it), and the cooldown (`GetActionCooldown` with `enable == 1`). The stock
-auto-attack flash is **not** re-asserted (not reported as an issue; the old
-per-frame redraw handled it via `IsAttackAction`/`IsAutoRepeatAction`/
-`IsCurrentAction`).
+it), the cooldown (`GetActionCooldown` with `enable == 1`), and the flash
+(casting/attack glow). The flash IS re-asserted: with `OnEvent` cleared the
+client's `ActionButton_UpdateFlash` never runs, so `IsCurrentAction`-driven
+`stateflash` latched at 1 after a cast and the golden border stuck forever.
+`RefreshScatterButtons` now recomputes it from the attr-resolved action
+(`IsAttackAction`/`IsAutoRepeatAction`/`IsCurrentAction`) and `Show()/Hide()`s
+the Flash texture directly (plain texture region — taint-safe). Cast-boundary
+events (`UNIT_SPELLCAST_START/STOP/SUCCEEDED`, `UNIT_SPELLCAST_CHANNEL_*
+`) were added to `flipFrame` so the glow is re-evaluated at cast start AND
+cast end even for spells with no cooldown (which fire no
+`ACTIONBAR_UPDATE_COOLDOWN`).
 
 **Why `OnEvent` is cleared (taint, learned in-game):** the client's
 `ActionButton_Update` resolves `self.action` from the `actionpage` attribute,
