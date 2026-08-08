@@ -768,24 +768,6 @@ local function RefreshScatterButtons()
                 else
                     icon:Hide()
                 end
-                -- Flash (casting/attack glow): the client's UpdateFlash never
-                -- runs here (OnEvent cleared) and the old RefreshScatterCombat
-                -- flash block was deleted in Phase 4, so the stateflash
-                -- attribute latches at 1 after a cast and the golden border
-                -- sticks forever. Re-assert it from the SAME attribute-
-                -- resolved action as the icon: Show while casting/attacking/
-                -- repeating, Hide otherwise. Flash is a plain texture region,
-                -- so Show/Hide is taint-safe (SetVertexColor/SetCooldown are
-                -- the tainting ops, not texture Show/Hide).
-                local fl = _G[btn:GetName() .. "Flash"]
-                if fl then
-                    local flash = IsAttackAction(action) or IsAutoRepeatAction(action) or IsCurrentAction(action)
-                    if flash then
-                        if not fl:IsShown() then fl:Show() end
-                    else
-                        if fl:IsShown() then fl:Hide() end
-                    end
-                end
             end
         end
         -- Diagnostic: which page-1 slots actually have content, and which
@@ -815,20 +797,31 @@ local function RefreshScatterButtons()
                 if not ok then
                     MobileUI_Debug("Flip: ActionButton" .. i .. " update failed: " .. tostring(err))
                 end
-                -- Flash re-assert (same as the in-combat branch): UpdateAction's
-                -- internal UpdateFlash uses possibly-stale self.action and only
-                -- sets the stateflash attribute; our direct texture Show/Hide
-                -- below is authoritative and uses the attribute-resolved
-                -- action, so the casting glow can't latch on.
-                local action = ResolveScatterAction(btn, i)
-                local fl = _G[btn:GetName() .. "Flash"]
-                if fl then
-                    local flash = IsAttackAction(action) or IsAutoRepeatAction(action) or IsCurrentAction(action)
-                    if flash then
-                        if not fl:IsShown() then fl:Show() end
-                    else
-                        if fl:IsShown() then fl:Hide() end
-                    end
+            end
+        end
+    end
+end
+
+-- Flash (casting/attack glow) re-assert, called EVERY FRAME from the guard
+-- OnUpdate (below). The client's ActionButton_UpdateFlash never runs (OnEvent
+-- cleared) and cast events are unreliable on this server, so the stateflash
+-- attribute latches at 1 after a cast and the glow sticks forever. Re-assert
+-- it here from the attribute-resolved action: Show while casting/attacking/
+-- repeating, Hide otherwise — so it turns off within a frame of the cast
+-- ending. Flash is a plain texture region, so Show/Hide is taint-safe
+-- (SetVertexColor/SetCooldown are the tainting ops, not texture Show/Hide).
+local function ReassertFlash()
+    for i = 1, 12 do
+        local btn = _G["ActionButton" .. i]
+        if btn then
+            local action = ResolveScatterAction(btn, i)
+            local fl = _G[btn:GetName() .. "Flash"]
+            if fl then
+                local flash = IsAttackAction(action) or IsAutoRepeatAction(action) or IsCurrentAction(action)
+                if flash then
+                    if not fl:IsShown() then fl:Show() end
+                else
+                    if fl:IsShown() then fl:Hide() end
                 end
             end
         end
@@ -1288,6 +1281,13 @@ local function ApplyHideFrames()
                     MobileUILayout.ApplyFlip()
                 end
             end
+            -- Flash re-assert (every frame, incl. combat): the client's
+            -- ActionButton_UpdateFlash never runs (OnEvent cleared) and cast
+            -- events are unreliable on this server, so the casting glow
+            -- latches on after a cast. Re-assert it here from the attribute-
+            -- resolved action so it turns off within a frame of the cast
+            -- ending. Taint-safe: Flash is a plain texture region.
+            ReassertFlash()
             -- Everything below this line Show()/Hide()s PROTECTED frames (the
             -- stock bars and bar buttons): during combat lockdown those calls
             -- are blocked and TAINT the frames — which then surfaces as
