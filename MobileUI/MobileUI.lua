@@ -18,6 +18,7 @@ local DEFAULTS = {
     chatHidden   = false, -- true = entire chat UI reparented onto hidden frame
     lookSpeed    = 90,    -- cameraYawMoveSpeed; 90 = WoW min; lower = less sensitive
     layoutEnabled = true, -- true = apply the 5-point mobile layout revamp
+    tapInteract  = true,  -- true = left click on world acts like right click (interact)
     debug        = false, -- true = also print MobileUI_Debug entries to chat
 }
 
@@ -88,6 +89,9 @@ function core:PLAYER_ENTERING_WORLD()
     MobileUI:ApplyLookSpeed()
     MobileUI:CreateChatBubble()
     MobileUI:ApplyChatVisibility()
+    if MobileDB.tapInteract then
+        MobileUIClick:Apply()
+    end
     if MobileDB.layoutEnabled then
         MobileUILayout:Apply()
     end
@@ -175,12 +179,20 @@ SlashCmdList["MOBILEUI"] = function(msg)
             print("|cff00ccff[MobileUI]|r Mobile layout disabled (default restored).")
         end
 
+    elseif cmd == "tap" then
+        local enabled = MobileUIClick:Toggle()
+        print("|cff00ccff[MobileUI]|r Tap = Interact " ..
+            (enabled and "ON" or "OFF") ..
+            " (left click on world now " ..
+            (enabled and "interacts like right click" or "targets normally") .. ").")
+
     else
         print("|cff00ccff[MobileUI]|r Scale: 1.2 (fixed; minimap 1.25)" ..
             " | chat: " .. (MobileDB.chatHidden and "hidden" or "shown") ..
             " | look: " .. tostring(MobileDB.lookSpeed or 90) ..
-            " | layout: " .. (MobileDB.layoutEnabled and "on" or "off"))
-        print("|cff00ccff[MobileUI]|r Usage: /mui chat | /mui look <10-90> | /mui layout | /mui debug | /mui debugclear")
+            " | layout: " .. (MobileDB.layoutEnabled and "on" or "off") ..
+            " | tap: " .. (MobileDB.tapInteract and "on" or "off"))
+        print("|cff00ccff[MobileUI]|r Usage: /mui chat | /mui look <10-90> | /mui layout | /mui tap | /mui debug | /mui debugclear")
     end
 end
 
@@ -194,6 +206,8 @@ function MobileUI_OptionsOnShow(panel)
     if lookSlider then lookSlider:SetValue(MobileDB.lookSpeed or 90) end
     local layoutCheck = _G[name .. "LayoutCheck"]
     if layoutCheck then layoutCheck:SetChecked(MobileDB.layoutEnabled) end
+    local tapCheck = _G[name .. "TapInteractCheck"]
+    if tapCheck then tapCheck:SetChecked(MobileDB.tapInteract) end
     local debugCheck = _G[name .. "DebugCheck"]
     if debugCheck then debugCheck:SetChecked(MobileDB.debug) end
 end
@@ -211,6 +225,16 @@ function MobileUI_OptionsOnLayoutChanged(checked)
         MobileUILayout:Apply()
     else
         MobileUILayout:Revert()
+    end
+end
+
+function MobileUI_OptionsOnTapInteractChanged(checked)
+    if not MobileDB then return end
+    MobileDB.tapInteract = checked and true or false
+    if MobileDB.tapInteract then
+        MobileUIClick:Apply()
+    else
+        MobileUIClick:Revert()
     end
 end
 
