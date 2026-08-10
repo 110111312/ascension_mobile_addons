@@ -31,6 +31,23 @@ local ACTION2_BUTTONS = {
     { scatter = 14, src = 4 },  -- keybind T
     { scatter = 15, src = 5 },  -- keybind F
 }
+-- Party member frames. Stock 3.3.5a anchors PartyMemberFrame1 TOPLEFT of
+-- UIParent at (10, -160) and chains frames 2-4 below each previous member's
+-- pet frame (PartyFrame.xml) — a vertical column on the LEFT side, which on
+-- this layout collides with the quest tracker under the map. The layout
+-- reparents all four into a scaled container parked in the empty strip on
+-- the right edge: below the 2-row menu bar (TOPRIGHT -8,-8, 180x70 -> bottom
+-- at y=78 from top) and above the top of the action arc, button 15
+-- (BOTTOMRIGHT -20,316, 51x51 -> top at y=367 from bottom). On the 1128x634
+-- screen that strip is ~189 units tall; 4 members chain at 83 units each
+-- (322 total) plus the ~73-unit content overhang, so 0.5 scale -> ~161 units
+-- fits with margin. The container scale also scales the internal pet frame /
+-- debuff rows / fonts uniformly.
+local PARTY_MEMBER_FRAMES = {
+    "PartyMemberFrame1", "PartyMemberFrame2",
+    "PartyMemberFrame3", "PartyMemberFrame4",
+}
+local PARTY_SCALE = 0.5
 local MICRO_BUTTONS = {
     "CharacterMicroButton", "SpellbookMicroButton", "TalentMicroButton",
     "AchievementMicroButton", "QuestLogMicroButton", "SocialsMicroButton",
@@ -86,7 +103,7 @@ local lbfActionBar, lbfMenuBar
 
 -- State
 local saved = {}
-local menuBar, bagButton, combatFrame, guardFrame, pendingAction, bagHooked
+local menuBar, bagButton, combatFrame, guardFrame, pendingAction, bagHooked, partyFrame
 local HOTKEY_FRAMES = {}  -- populated in ApplyActionBar, hidden by guard OnUpdate
 
 -- No tooltip over the thumb-zone action buttons: GameTooltip would cover the
@@ -230,6 +247,16 @@ local function SaveOriginals()
             local f = _G[name]
             if f then saved.player.overlay[name] = { points = SavePoints(f), shown = f:IsShown() } end
         end
+    end
+    -- Party member frames: original parent + anchor points (frame 1 anchors
+    -- to UIParent, frames 2-4 to the previous member's pet frame). The shown
+    -- state is deliberately NOT saved here — the client owns it via
+    -- PartyMemberFrame_Update on PARTY_MEMBERS_CHANGED, so revert only has to
+    -- undo the reparent + re-anchor.
+    saved.party = {}
+    for _, name in ipairs(PARTY_MEMBER_FRAMES) do
+        local f = _G[name]
+        if f then saved.party[name] = { parent = f:GetParent(), points = SavePoints(f) } end
     end
     saved.hides = {}
     for _, name in ipairs(HIDE_FRAMES) do
@@ -1135,6 +1162,55 @@ local function RevertPlayerFrame()
     end
 end
 
+-- 5b. Party Frames → right edge, scaled into the strip below the menu bar
+-- Reparents the four PartyMemberFrame buttons into a container we position
+-- and scale. Only frame 1 is re-anchored (TOPLEFT of the container); frames
+-- 2-4 keep their stock pet-frame-relative anchors, so a member's pet still
+-- pushes the members below it down correctly, and everything (pet frame,
+-- debuff row, fonts, portrait) scales uniformly with the container.
+-- The frames are SecureUnitButtonTemplate (protected): all reparent/point/
+-- scale calls run out of combat (Apply defers during lockdown), and the
+-- client's own Show/Hide on PARTY_MEMBERS_CHANGED keeps working because
+-- reparenting does not taint. The client never re-anchors the frames
+-- (PartyMemberFrame.lua only touches internal art textures), so no guard
+-- re-assert is needed.
+local function ApplyPartyFrames()
+    MobileUI_Debug("ApplyPartyFrames: starting")
+    if not partyFrame then
+        partyFrame = CreateFrame("Frame", "MobileUIPartyFrame", UIParent)
+        partyFrame:SetFrameStrata("LOW")
+    end
+    for i, name in ipairs(PARTY_MEMBER_FRAMES) do
+        local f = _G[name]
+        if f then
+            f:SetParent(partyFrame)
+            if i == 1 then
+                f:ClearAllPoints()
+                f:SetPoint("TOPLEFT", partyFrame, "TOPLEFT", 0, 0)
+            end
+        else
+            MobileUI_Debug("ApplyPartyFrames: " .. name .. " NOT FOUND")
+        end
+    end
+    partyFrame:ClearAllPoints()
+    -- TOPRIGHT -20,-80: right edge aligned with button 15's column (right
+    -- edge at -20), top 2 units below the menu bar's bottom edge (y=78).
+    partyFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -20, -80)
+    partyFrame:SetScale(PARTY_SCALE)
+    partyFrame:Show()
+    MobileUI_Debug("ApplyPartyFrames: done (scale=" .. PARTY_SCALE .. ")")
+end
+local function RevertPartyFrames()
+    if partyFrame then partyFrame:Hide() end
+    for _, name in ipairs(PARTY_MEMBER_FRAMES) do
+        local f, sv = _G[name], saved.party and saved.party[name]
+        if f and sv then
+            f:SetParent(sv.parent)
+            RestorePoints(f, sv.points)
+        end
+    end
+end
+
 -- 6. Chat Frame: lift it so its "to newest" scroll button sits just above
 -- the chat bubble (which itself sits just above the bag icon).
 -- 3.3.5 FrameXML geometry: the scroll-button strip (ChatFrame1ButtonFrame) is
@@ -1429,6 +1505,7 @@ function MobileUILayout:Apply()
     step("ApplyBags", ApplyBags)
     step("ApplyActionBar", ApplyActionBar)
     step("ApplyPlayerFrame", ApplyPlayerFrame)
+    step("ApplyPartyFrames", ApplyPartyFrames)
     step("ApplyChatFrame", ApplyChatFrame)
     step("ApplyHideFrames", ApplyHideFrames)
     -- Wrapped in a closure so a nil MobileUIWorldMap is caught by step()'s pcall
@@ -1450,6 +1527,7 @@ function MobileUILayout:Revert()
     RevertBags()
     RevertActionBar()
     RevertPlayerFrame()
+    RevertPartyFrames()
     RevertChatFrame()
     MobileUIWorldMap:Revert()
     MobileUI_Debug("Layout reverted.")
