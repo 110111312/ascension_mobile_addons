@@ -27,15 +27,17 @@ is resolved at click time — so wrapping the global intercepts every bag item
 click:
 
 ```lua
-origClick = ContainerFrameItemButton_OnClick
-ContainerFrameItemButton_OnClick = function(self, button)
-    if ( button == "LeftButton" and MerchantFrame and MerchantFrame:IsShown() ) then
-        local cursorType = GetCursorInfo()
-        if ( not cursorType and not SpellCanTargetItem() ) then
-            button = "RightButton"   -- empty cursor + vendor open: sell
+local function InstallWrapper()
+    origClick = ContainerFrameItemButton_OnClick
+    ContainerFrameItemButton_OnClick = function(self, button)
+        if ( button == "LeftButton" and MerchantFrame and MerchantFrame:IsShown() ) then
+            local cursorType = GetCursorInfo()
+            if ( not cursorType and not SpellCanTargetItem() ) then
+                button = "RightButton"   -- empty cursor + vendor open: sell
+            end
         end
+        origClick(self, button)
     end
-    origClick(self, button)
 end
 ```
 
@@ -43,6 +45,31 @@ Rewriting the button to `"RightButton"` runs the client's own sell path
 (`UseContainerItem` with the merchant guards: buyback-tab check,
 extended-cost confirmation). No protected functions are called — the sell
 path is the same code the user already triggers with a hold.
+
+## Why the wrapper is only installed while the vendor is open
+
+The bag buttons' OnClick string runs through this global for **every** bag
+click — including plain right-clicks. Right-clicking an item with a "Use:"
+effect (hearthstone, potion, food…) calls `UseContainerItem` in its
+**protected** mode (per `api/u.md`: protected only when it activates a "Use:"
+effect). If MobileUI code is on that call stack, the client reports
+
+```
+AddOn 'MobileUI' tainted the call of the secure function 'UseContainerItem()'
+```
+
+The sell path itself is never protected — in `UseContainerItem`'s dispatch
+the merchant-open condition wins over the use-effect condition — so the
+wrapper is installed **only while `MerchantFrame` is shown**:
+
+- `MERCHANT_SHOWED` → install the wrapper
+- `MERCHANT_CLOSED` / `PLAYER_REGEN_DISABLED` (combat) → remove it
+- `PLAYER_REGEN_ENABLED` → reinstall if the vendor is still open
+
+Outside vending the stock handler runs with no MobileUI code on the stack:
+no interception, no taint. The `MerchantFrame:IsShown()` guard also stays
+inside the wrapper so a left tap landing right as the vendor closes cannot
+be rewritten into a right-click "use item".
 
 ## What is preserved
 
