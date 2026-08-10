@@ -1,6 +1,12 @@
 -- MobileUILayout.lua - 5-Point Mobile UI Revamp
 MobileUILayout = {}
 
+-- Load-time diagnostic: is the world-map module present? If the file failed
+-- to load, MobileUIWorldMap is nil here and the Apply step below will log it.
+if MobileUI_Debug then
+    MobileUI_Debug("Layout load: MobileUIWorldMap=" .. tostring(MobileUIWorldMap))
+end
+
 -- Config
 local ACTION_BUTTONS = {
     [1]  = { size = 96, x = -29, y = 29  }, [2]  = { size = 77, x = -35,  y = 144 },
@@ -1425,7 +1431,9 @@ function MobileUILayout:Apply()
     step("ApplyPlayerFrame", ApplyPlayerFrame)
     step("ApplyChatFrame", ApplyChatFrame)
     step("ApplyHideFrames", ApplyHideFrames)
-    step("ApplyWorldMap", MobileUIWorldMap.Apply)
+    -- Wrapped in a closure so a nil MobileUIWorldMap is caught by step()'s pcall
+    -- and logged as "ERROR in ApplyWorldMap" instead of aborting Apply silently.
+    step("ApplyWorldMap", function() MobileUIWorldMap:Apply() end)
     MobileUI_Debug("=== Layout applied ===")
 end
 function MobileUILayout:Revert()

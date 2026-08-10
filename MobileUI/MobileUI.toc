@@ -12,5 +12,7 @@ MobileUIClick.lua
 MobileUISell.lua
 MobileUIBuy.lua
 MobileUIWorldMap.lua
+MobileUIWorldMapPanel.lua
+MobileUIWorldMapMarkers.lua
 MobileUILayout.lua
 MobileUIOptions.xml
