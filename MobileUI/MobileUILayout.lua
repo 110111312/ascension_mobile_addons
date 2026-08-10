@@ -412,6 +412,9 @@ local function RepositionContainerFrames()
         end
     end
 end
+-- Exposed so other modules (e.g. bag-swap) can re-snap the container
+-- frames back to the mobile column after the client re-lays them out.
+MobileUILayout.RepositionContainerFrames = RepositionContainerFrames
 local function ApplyBags()
     for _, name in ipairs(BAG_BUTTONS) do
         local btn = _G[name]

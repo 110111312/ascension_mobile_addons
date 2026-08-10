@@ -21,13 +21,15 @@ local DEFAULTS = {
     tapInteract  = true,  -- true = left click on world acts like right click (interact)
     tapSell      = true,  -- true = tap a bag item to sell while a vendor is open
     tapBuy       = true,  -- true = tap a merchant item to buy it directly
-    debug        = false, -- true = also print MobileUI_Debug entries to chat
+    bagSwap      = true,  -- true = hold a bag when all slots are full to pick its slot
 }
 
 -- ============================================================================
 -- Debug Logging System
 -- Saves to MobileUIDebugLog (SavedVariable), written to disk on logout/reload.
 -- File: WTF/Account/<account>/SavedVariables/MobileUI.lua
+-- NOTE: ring buffer only — never print debug to chat. On a phone stream chat
+-- is hard to read and debug spam scrolls real messages away.
 -- ============================================================================
 
 function MobileUI_Debug(msg)
@@ -38,11 +40,6 @@ function MobileUI_Debug(msg)
     -- Keep only last 500 entries to prevent SV file bloat
     while #MobileUIDebugLog > 500 do
         table.remove(MobileUIDebugLog, 1)
-    end
-    -- Also print to chat (only when debug is enabled; the ring buffer is
-    -- always written so it stays available on disk for dev use)
-    if MobileDB and MobileDB.debug then
-        print("|cff888888[MobileUI]|r " .. msg)
     end
 end
 
@@ -99,6 +96,9 @@ function core:PLAYER_ENTERING_WORLD()
     end
     if MobileDB.tapBuy then
         MobileUIBuy:Apply()
+    end
+    if MobileDB.bagSwap then
+        MobileUIBagSwap:Apply()
     end
     if MobileDB.layoutEnabled then
         MobileUILayout:Apply()
@@ -206,6 +206,12 @@ SlashCmdList["MOBILEUI"] = function(msg)
             (enabled and "ON" or "OFF") ..
             " (tap a merchant item to buy it directly).")
 
+    elseif cmd == "bagswap" then
+        local enabled = MobileUIBagSwap:Toggle()
+        print("|cff00ccff[MobileUI]|r Bag Swap Menu " ..
+            (enabled and "ON" or "OFF") ..
+            " (hold a bag with no free slots to pick which slot it goes into).")
+
     else
         print("|cff00ccff[MobileUI]|r Scale: 1.2 (fixed; minimap 1.25)" ..
             " | chat: " .. (MobileDB.chatHidden and "hidden" or "shown") ..
@@ -213,8 +219,9 @@ SlashCmdList["MOBILEUI"] = function(msg)
             " | layout: " .. (MobileDB.layoutEnabled and "on" or "off") ..
             " | tap: " .. (MobileDB.tapInteract and "on" or "off") ..
             " | sell: " .. (MobileDB.tapSell and "on" or "off") ..
-            " | buy: " .. (MobileDB.tapBuy and "on" or "off"))
-        print("|cff00ccff[MobileUI]|r Usage: /mui chat | /mui look <10-90> | /mui layout | /mui tap | /mui sell | /mui buy | /mui debug | /mui debugclear")
+            " | buy: " .. (MobileDB.tapBuy and "on" or "off") ..
+            " | bagswap: " .. (MobileDB.bagSwap and "on" or "off"))
+        print("|cff00ccff[MobileUI]|r Usage: /mui chat | /mui look <10-90> | /mui layout | /mui tap | /mui sell | /mui buy | /mui bagswap | /mui debug | /mui debugclear")
     end
 end
 
@@ -234,8 +241,8 @@ function MobileUI_OptionsOnShow(panel)
     if sellCheck then sellCheck:SetChecked(MobileDB.tapSell) end
     local buyCheck = _G[name .. "TapBuyCheck"]
     if buyCheck then buyCheck:SetChecked(MobileDB.tapBuy) end
-    local debugCheck = _G[name .. "DebugCheck"]
-    if debugCheck then debugCheck:SetChecked(MobileDB.debug) end
+    local bagSwapCheck = _G[name .. "BagSwapCheck"]
+    if bagSwapCheck then bagSwapCheck:SetChecked(MobileDB.bagSwap) end
 end
 
 function MobileUI_OptionsOnLookSpeedChanged(value)
@@ -284,11 +291,14 @@ function MobileUI_OptionsOnTapBuyChanged(checked)
     end
 end
 
--- Debug-to-chat toggle (persisted). Enables the flip event/poll tracing in
--- MobileUILayout without a slash command.
-function MobileUI_OptionsOnDebugChanged(checked)
+function MobileUI_OptionsOnBagSwapChanged(checked)
     if not MobileDB then return end
-    MobileDB.debug = checked and true or false
-    print("|cff00ccff[MobileUI]|r Debug-to-chat " ..
-        (MobileDB.debug and "ON" or "OFF") .. ".")
+    MobileDB.bagSwap = checked and true or false
+    if MobileDB.bagSwap then
+        MobileUIBagSwap:Apply()
+    else
+        MobileUIBagSwap:Revert()
+    end
 end
+
+

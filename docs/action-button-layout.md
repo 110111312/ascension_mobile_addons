@@ -184,7 +184,7 @@ transition (bonus offset 1→0):
   `BonusActionBarFrame` **out of combat only** (same section that hides
   `MainMenuBar` — the identical call has run for months with zero errors,
   so out-of-combat protected calls are clean here). The unstealth branch
-  probes the result (Debug to Chat): `bonusShown` should read 0 at
+  probes the result (debug log): `bonusShown` should read 0 at
   unstealth (already hidden) or drop at +0.5s; if it persists to +3s the
   busy hypothesis failed and the fallback is restoring the flip-bridge
   driver (`63c5840` — working clicks, cosmetic `UNKNOWN()` error).

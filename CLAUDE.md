@@ -33,7 +33,8 @@ If no doc exists for the feature, create one.
 3. **Scale is fixed at 1.2** (minimap effective 1.25) — no slider, no slash option. Don't re-add one.
 4. **Mouse look speed** goes below the game's minimum (90) via `SetCVar("cameraYawMoveSpeed", v)` directly. Range 10–90, default 90.
 5. **Saved vars:** `MobileDB` (user settings) + `MobileUIDebugLog` (ring buffer, dev-only).
-6. **Ascension is a private server** — customized 3.3.5a, so the WoW API reference in `reference/wowprogramming/` may not be 100% accurate. It'll work most of the time, but watch for server-specific differences.
+6. **Never print debug to chat** — on a phone stream chat is hard to read, and debug spam scrolls real messages (general/trade) away. Debug tracing goes to the `MobileUIDebugLog` ring buffer only (view with `/mui debug`). Don't add `print()` debug output to chat.
+7. **Ascension is a private server** — customized 3.3.5a, so the WoW API reference in `reference/wowprogramming/` may not be 100% accurate. It'll work most of the time, but watch for server-specific differences.
 
 ## Rules
 

@@ -119,7 +119,7 @@
                 </Scripts>
             </CheckButton>
 
-            <CheckButton name="$parentDebugCheck" inherits="OptionsCheckButtonTemplate">
+            <CheckButton name="$parentBagSwapCheck" inherits="OptionsCheckButtonTemplate">
                 <Anchors>
                     <Anchor point="TOPLEFT" relativeTo="$parentTapBuyCheck" relativePoint="BOTTOMLEFT">
                         <Offset><AbsDimension x="0" y="-8"/></Offset>
@@ -127,10 +127,10 @@
                 </Anchors>
                 <Scripts>
                     <OnLoad>
-                        _G[self:GetName().."Text"]:SetText("Debug to Chat")
+                        _G[self:GetName().."Text"]:SetText("Bag Swap Menu (hold a bag to pick its slot)")
                     </OnLoad>
                     <OnClick>
-                        MobileUI_OptionsOnDebugChanged(self:GetChecked())
+                        MobileUI_OptionsOnBagSwapChanged(self:GetChecked())
                     </OnClick>
                 </Scripts>
             </CheckButton>
