@@ -602,8 +602,15 @@ end
 
 local function OpenPicker(btnIndex)
     if not active then return end
-    pickerButton = btnIndex
+    local created = not menuReady
     if not menuReady then CreateMenu() end
+    -- pickerButton must be set AFTER CreateMenu: CreateMenu ends with
+    -- menu:Hide(), whose OnHide script nils pickerButton — setting it before
+    -- would leave it nil on the first open and AssignEntry would silently
+    -- no-op (the first-open tap-tap bug).
+    pickerButton = btnIndex
+    MobileUI_Debug(string.format("DynamicBar: OpenPicker btn=%d createMenu=%s menuReady=%s",
+        btnIndex, tostring(created), tostring(menuReady)))
     entries = BuildEntries()
     MobileUI_Debug(string.format("DynamicBar: picker opened btn=%d entries=%d",
         btnIndex, #entries))
@@ -656,6 +663,8 @@ ReturnCursorContent = function()
 end
 
 AssignEntry = function(entry)
+    MobileUI_Debug(string.format("DynamicBar: AssignEntry pickerButton=%s entry=%s",
+        tostring(pickerButton), entry and entry.name or "nil"))
     if not pickerButton then return end
     if InCombatLockdown() then
         MobileUI_Debug("DynamicBar: assign blocked during combat")
