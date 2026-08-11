@@ -48,9 +48,14 @@ client renders icon / cooldown / stack count / usable tint natively.
 |---|---|
 | **Tap** (left click) | Stock action-button click → `UseAction(slot)` — uses the item / casts the spell. Taint-clean. |
 | **Hold** (right click) | An `OnMouseDown` script on the stock button (installed the same way the layout installs `OnEnter` on the arc buttons) opens the picker on right-**down** — works for empty and filled slots. |
-| **Tap a row** | Assigns it to the held button's slot via pickup+`PlaceAction`, closes the picker. Gated out of combat. |
-| **Hold a row** | Shows the entry's tooltip (global `GameTooltip`, pcall-wrapped); hides on release. Also on hover for desktop. |
+| **Tap a row once** | Shows the entry's tooltip (global `GameTooltip`, pcall-wrapped) and **arms** the cell (gold outline). Also on hover for desktop. |
+| **Tap the same row again** | Assigns it to the held button's slot via pickup+`PlaceAction`, closes the picker. Gated out of combat. |
 | **X button / ESC / tap outside** | Dismisses the picker. |
+
+The picker uses a **tap-tap** interaction (first tap = tooltip, second tap =
+assign) instead of hold-for-tooltip — the hold gesture is flaky on Artemis.
+Tapping a different row re-arms that row; the armed state and tooltip reset
+on dismiss.
 
 The stock right-click **up** still fires `ActionButton_OnClick` → `PickupAction(slot)`, which puts the slot's item on the cursor. The menu's **`OnHide`** re-places it via `PlaceAction` (fallback `ReturnCursorContent`), so nothing is lost or left dangling on the cursor — every dismissal path (X, ESC, tap-outside, assign, revert) ends in `menu:Hide()`.
 
@@ -69,7 +74,8 @@ adapts to the tallest column (cell height shrinks if a category is long):
 - **Spells** — known spells filtered to *helpful* (`IsHelpfulSpell`, usable
   on player/friendly) minus attack spells (`IsAttackSpell`) minus passives
   (`IsPassiveSpell`) minus harmful (`IsHarmfulSpell`) minus **trade-skill
-  recipes**. **No keep/drop filter** — every candidate shows, sorted
+  recipes** minus **stance/stealth-required spells** (Palm Sigil needs
+  Stealth). **No keep/drop filter** — every candidate shows, sorted
   alphabetically. Active buffs show remaining time (e.g. `12m`).
 - **Mounts** — split out of the spell scan via the book type (`"MOUNT"`)
   or a name heuristic (Ascension's custom mount spells report book type
@@ -93,15 +99,22 @@ The per-spell dump (`DynamicBar: spell: <name> | type=… hlp=… hrm=… …`)
 logs every checked spell's classification signals so a real recipe filter
 can be derived from data instead of guessed.
 
-Each row: small icon (20px) + name + count/duration. Tap a row to assign,
-hold a row for its tooltip (global `GameTooltip`, pcall-wrapped, anchored to
+Each row: small icon (20px) + name + count/duration. Tap a row once to
+preview its tooltip (global `GameTooltip`, pcall-wrapped, anchored to
 **the cell** — anchoring to the 520px menu would push it off-screen on a
-phone). The tooltip uses `GameTooltip:SetSpell(spellbookID, "spell")` —
+phone), tap it again to assign. The tooltip uses
+`GameTooltip:SetSpell(spellbookID, "spell")` —
 `SetSpellBookItem` is stripped on this client, `GetSpellBookItemInfo`'s 2nd
 return (spellID) is nil, and `GetSpellInfo` has no spellID return (9-value
-form), so `SetSpellByID` can't work. The tooltip hides on **any** button-up,
-on click, and on menu hide, so a stale tooltip (from a hold whose right-up
-was lost on a flaky connection) can't linger and swallow the next tap.
+form), so `SetSpellByID` can't work. The tooltip hides on dismiss and when
+re-arming another row.
+
+**Stance/stealth filter:** `GetNumTooltipLines` is stripped, so the
+requirement is read by scanning the tooltip's font strings via
+`GameTooltip:GetRegions()` for a line starting with `Requires` that also
+mentions `Stealth`, `Form` or `Stance` (color codes stripped first).
+`Requires level`, `Requires a shield` etc. are ignored. Results are cached by
+spell name; rejected spells log as `name(stance)`.
 Spellbook scan order: `GetSpellBookItemName` (documented) → `GetSpellName`
 → `GetSpellBookItemInfo`+`GetSpellInfo` (undocumented last resort). A debug
 line reports which path ran and the candidate counts

@@ -22,8 +22,9 @@
 --                         column. No scrolling at all. Tap a row to assign it
 --                         to the button's action slot via PickupContainerItem
 --                         / PickupSpell + PlaceAction (not on the taint-
---                         protected use path); hold a row to preview its
---                         tooltip. Close via the X button, ESC, or a tap
+--                         protected use path); tap a row once to preview its
+--                         tooltip, tap it again to assign. Close via the X
+--                         button, ESC, or a tap
 --                         outside. The stock right-click pickup on release
 --                         puts the slot's item on the cursor; the menu's
 --                         OnHide re-places it (PlaceAction) so nothing is
@@ -53,6 +54,8 @@
 --   6. This client strips ScrollFrame:SetVerticalScroll, Slider:SetObeyStepOnDrag,
 --      Frame:SetClipsChildren and GameTooltip:GetNumTooltipLines, so the
 --      picker uses a column layout with no scrolling at all.
+--   7. The stance/stealth filter (tooltip GetRegions scan for "Requires
+--      Stealth/Form/Stance") drops Palm Sigil without dropping normal buffs.
 
 local FIRST_BTN = 6      -- MultiBarBottomLeftButton6..11
 local MAX_BTN   = 6      -- 6 buttons (6-11)
@@ -93,6 +96,7 @@ local menu, clickCatcher, menuTitle, menuHint, closeBtn
 local columns = {}       -- [kind] = { header = fs, cells = {} }
 local pickerButton, entries
 local menuReady = false  -- true only after CreateMenu fully builds the menu
+local armedCell = nil    -- picker cell armed by a first tap (second tap assigns)
 -- Forward refs: assigned below; referenced by the menu cells' OnClick and by
 -- the menu OnHide (which runs before they are defined).
 local AssignEntry, ReturnCursorContent
@@ -155,6 +159,38 @@ end
 -- client (verified in-game on both the global and addon-created tooltips), so
 -- duration can't be read at all. The picker shows remaining time only for
 -- buffs currently active on the player (UnitBuff gives the exact duration).
+
+local stanceCache = {}
+-- Detect spells that require a stance/stealth (e.g. "Requires Stealth",
+-- "Requires Cat Form") by scanning the tooltip's font strings. The tooltip
+-- line-reading API (GetNumTooltipLines) is stripped on this client, so we
+-- iterate GetRegions() instead. Only stance/stealth requirements match —
+-- "Requires level", "Requires a shield" etc. are ignored. Cached by name.
+local function SpellRequiresStance(spellbookID, sname)
+    if stanceCache[sname] ~= nil then return stanceCache[sname] end
+    if not GameTooltip or not GameTooltip.SetSpell then return false end
+    local requires = false
+    local ok, err = pcall(function()
+        GameTooltip:SetOwner(UIParent, "ANCHOR_NONE")
+        GameTooltip:SetSpell(spellbookID, "spell")
+        for _, r in ipairs({ GameTooltip:GetRegions() }) do
+            if r and r.GetText and r:GetObjectType() == "FontString" then
+                local t = (r:GetText() or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+                if t:match("^Requires") and
+                   (t:match("Stealth") or t:match("Form") or t:match("Stance")) then
+                    requires = true
+                    return
+                end
+            end
+        end
+    end)
+    GameTooltip:Hide()
+    if not ok then
+        MobileUI_Debug("DynamicBar: stance-scan ERROR: " .. tostring(err))
+    end
+    stanceCache[sname] = requires
+    return requires
+end
 
 local function BuildEntries()
     local items, spells, mounts = {}, {}, {}
@@ -268,6 +304,11 @@ local function BuildEntries()
                     if tab == 1 and kind ~= "mount" and not sname:find("Resurrect", 1, true) then
                         keep, why = false, "general"
                     end
+                    -- Stance/stealth-required spells (Palm Sigil needs
+                    -- Stealth) are useless on a tap bar.
+                    if keep and SpellRequiresStance(i, sname) then
+                        keep, why = false, "stance"
+                    end
                 end
                 if keep then
                     local entry = {
@@ -370,21 +411,32 @@ local function GetCell(kind, n)
         cell.count = cell:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         cell.count:SetPoint("BOTTOMRIGHT", cell.icon, "BOTTOMRIGHT", 0, 0)
         cell:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+        -- Armed-state border: a gold outline marks the cell that will assign
+        -- on the next tap.
+        cell:SetBackdrop({
+            edgeFile = "Interface\\Buttons\\WHITE8X8",
+            edgeSize = 2,
+            insets = { left = 1, right = 1, top = 1, bottom = 1 },
+        })
+        cell:SetBackdropBorderColor(1, 0.82, 0, 0)
+        -- Tap-tap: first tap shows the tooltip and arms the cell, second tap
+        -- on the same cell assigns. (Hold-for-tooltip was dropped — the hold
+        -- gesture is flaky on Artemis.)
         cell:SetScript("OnClick", function(self)
-            HideEntryTooltip()
-            if self.entry then AssignEntry(self.entry) end
-        end)
-        cell:SetScript("OnMouseDown", function(self, button)
-            if button == "RightButton" and self.entry then
-                MobileUI_Debug("DynamicBar: cell down btn=" .. tostring(button))
+            if not self.entry then return end
+            if armedCell == self then
+                armedCell = nil
+                self:SetBackdropBorderColor(1, 0.82, 0, 0)
+                HideEntryTooltip()
+                AssignEntry(self.entry)
+            else
+                if armedCell then
+                    armedCell:SetBackdropBorderColor(1, 0.82, 0, 0)
+                end
+                armedCell = self
+                self:SetBackdropBorderColor(1, 0.82, 0, 0.9)
                 ShowEntryTooltip(self, self.entry)
             end
-        end)
-        cell:SetScript("OnMouseUp", function(self, button)
-            -- Hide on ANY button-up: a stale tooltip (from a hold whose
-            -- right-up was lost on a flaky connection) must not linger and
-            -- swallow the next tap.
-            HideEntryTooltip()
         end)
         cell:SetScript("OnEnter", function(self)
             if self.entry then ShowEntryTooltip(self, self.entry) end
@@ -416,6 +468,10 @@ local function CreateMenu()
     -- All dismissal paths (X, ESC, tap-outside, assign, revert) end in
     -- menu:Hide(); the cursor cleanup lives here so nothing is lost.
     menu:SetScript("OnHide", function()
+        if armedCell then
+            armedCell:SetBackdropBorderColor(1, 0.82, 0, 0)
+            armedCell = nil
+        end
         HideEntryTooltip()
         if pickerButton and GetCursorInfo() then
             local slot = SlotForButton(pickerButton)
@@ -493,6 +549,7 @@ local function PopulateColumns()
                 colX + sc * (CELL_W + CELL_GAP), -44 - HEADER_H - r * rowH)
             cell:SetSize(CELL_W, cellH)
             cell.entry = e
+            cell:SetBackdropBorderColor(1, 0.82, 0, 0)
             cell.icon:SetTexture(e.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
             cell.icon:Show()
             cell.name:SetText(e.name or "")
@@ -524,7 +581,7 @@ local function OpenPicker(btnIndex)
     elseif #entries == 0 then
         menuHint:SetText("No usable items or buff spells found.")
     else
-        menuHint:SetText("Tap to assign, hold for tooltip.")
+        menuHint:SetText("First tap: tooltip. Second tap: assign.")
     end
     PopulateColumns()
     local btn = _G["MultiBarBottomLeftButton" .. btnIndex]
