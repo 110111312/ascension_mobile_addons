@@ -124,18 +124,20 @@ end
 -- ============================================================================
 -- 3.3.5 has no spell-duration API, so buff durations come from the tooltip
 -- ("Duration: X min/sec") — the standard addon technique. Cached per spell id.
-local durTip   = CreateFrame("GameTooltip", "MobileUIDynamicBarTip", UIParent, "GameTooltipTemplate")
-durTip:SetOwner(UIParent, "ANCHOR_NONE")
+-- Uses the GLOBAL GameTooltip: addon-created GameTooltip frames on this
+-- client lack the template methods (verified in-game: SetSpellByID exists,
+-- GetNumTooltipLines is nil), so a created frame crashes the scan.
 local durCache = {}
 
 local function SpellDuration(spellID)
     if durCache[spellID] ~= nil then return durCache[spellID] end
     local dur
-    if spellID and durTip then
-        local ok = pcall(durTip.SetSpellByID, durTip, spellID)
-        if ok then
-            for line = 1, durTip:GetNumTooltipLines() do
-                local fs = _G["MobileUIDynamicBarTipTextLeft" .. line]
+    if spellID and GameTooltip then
+        local ok, err = pcall(function()
+            GameTooltip:SetOwner(UIParent, "ANCHOR_NONE")
+            GameTooltip:SetSpellByID(spellID)
+            for line = 1, GameTooltip:GetNumTooltipLines() do
+                local fs = _G["GameTooltipTextLeft" .. line]
                 local text = fs and fs:GetText() or ""
                 local n, unit = text:match("^Duration: (%d+) ?(min|sec|hr)")
                 if n then
@@ -146,7 +148,11 @@ local function SpellDuration(spellID)
                     break
                 end
             end
+        end)
+        if not ok then
+            MobileUI_Debug("DynamicBar: tooltip duration scan failed: " .. tostring(err))
         end
+        GameTooltip:Hide()
     end
     durCache[spellID] = dur or false
     return dur
