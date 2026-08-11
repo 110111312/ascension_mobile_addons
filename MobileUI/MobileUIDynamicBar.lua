@@ -16,8 +16,10 @@
 --                         cooldown / stack count natively — no display code.
 --   Hold (right click) -> assign: an OnMouseDown script installed on the
 --                         stock button opens the picker on right-down. The
---                         picker is a scrollable list grouped by category
---                         (Items / Spells / Mounts): tap a row to assign it
+--                         picker is a COLUMN layout — one column per category
+--                         (Items / Spells / Mounts), each a 2-wide grid of
+--                         compact rows, frame height adapting to the tallest
+--                         column. No scrolling at all. Tap a row to assign it
 --                         to the button's action slot via PickupContainerItem
 --                         / PickupSpell + PlaceAction (not on the taint-
 --                         protected use path); hold a row to preview its
@@ -27,11 +29,12 @@
 --                         OnHide re-places it (PlaceAction) so nothing is
 --                         lost.
 --
--- Why no catcher overlay: a Button with RegisterForClicks(right-only) got
--- NO mouse events on this client (verified in-game via the debug ring), and
--- a plain Frame overlay would also eat left taps (no pass-through here). A
--- direct OnMouseDown script is the minimal proven mechanic — the layout
--- already installs scripts on the arc buttons and casting stays clean.
+-- Why no overlay/catcher over the buttons: a Button with
+-- RegisterForClicks(right-only) got NO mouse events on this client (verified
+-- in-game via the debug ring), and a plain Frame overlay would also eat left
+-- taps (no pass-through here). A direct OnMouseDown script is the minimal
+-- proven mechanic — the layout already installs scripts on the arc buttons
+-- and casting stays clean.
 --
 -- Assignments live in the client's action-bar save data (slots 66-71), so
 -- they persist across reload/logout for free. Revert re-parks the tail
@@ -47,9 +50,9 @@
 --      item left dangling when the picker is dismissed).
 --   5. LBF circular skin on the strip buttons keeps the native icon/cooldown
 --      display working (stock OnEvent kept) with no combat taint errors.
---   6. This client strips ScrollFrame:SetVerticalScroll and
---      Slider:SetObeyStepOnDrag (like GameTooltip:GetNumTooltipLines), so the
---      picker scrolls via a plain clipped viewport + manual content offset.
+--   6. This client strips ScrollFrame:SetVerticalScroll, Slider:SetObeyStepOnDrag,
+--      Frame:SetClipsChildren and GameTooltip:GetNumTooltipLines, so the
+--      picker uses a column layout with no scrolling at all.
 
 local FIRST_BTN = 6      -- MultiBarBottomLeftButton6..11
 local MAX_BTN   = 6      -- 6 buttons (6-11)
@@ -60,13 +63,25 @@ local PITCH_GAP      = 4
 local STRIP_MARGIN   = 8   -- gap after the bag button
 local STRIP_END_MARG = 8   -- gap before the player frame
 
-local MENU_W, MENU_H = 340, 460
-local ROW_H, HEADER_H, ICON = 34, 22, 26
+-- Picker: 3 category columns (Items / Spells / Mounts), each a 2-wide grid
+-- of compact rows. No scrolling — the frame height adapts to the tallest
+-- column (cell height shrinks if a category is long).
+local MENU_W       = 520
+local MENU_H_MAX   = 460
+local COL_W        = 160
+local COL_GAP      = 8
+local CELL_W       = 76
+local CELL_H       = 26
+local CELL_GAP     = 4
+local ROW_GAP      = 2
+local HEADER_H     = 22
+local COLS_PER_CAT = 2
 local GROUP_NAMES = {
     item  = "Items",
     spell = "Spells",
     mount = "Mounts",
 }
+local GROUP_ORDER = { "item", "spell", "mount" }
 
 MobileUIDynamicBar = {}
 
@@ -75,11 +90,10 @@ local active     = false
 local pendingDefer = nil
 
 local menu, clickCatcher, menuTitle, menuHint, closeBtn
-local viewport, content, scrollBar
-local rowPool, headerPool = {}, {}
+local columns = {}       -- [kind] = { header = fs, cells = {} }
 local pickerButton, entries
-local menuReady = false   -- true only after CreateMenu fully builds the menu
--- Forward refs: assigned below; referenced by the menu rows' OnClick and by
+local menuReady = false  -- true only after CreateMenu fully builds the menu
+-- Forward refs: assigned below; referenced by the menu cells' OnClick and by
 -- the menu OnHide (which runs before they are defined).
 local AssignEntry, ReturnCursorContent
 
@@ -201,12 +215,15 @@ local function BuildEntries()
                     local passive = IsPassiveSpell and IsPassiveSpell(i, "spell")
                     local attack  = IsAttackSpell and IsAttackSpell(i, "spell")
                     local helpful = IsHelpfulSpell and IsHelpfulSpell(i, "spell")
+                    local trade   = IsTradeSkill and IsTradeSkill(i, "spell")
                     local keep    = true
                     local why     = nil
                     if passive then keep, why = false, "passive" end
                     if attack  then keep, why = false, "attack"  end
                     -- Restrict to friendly-target spells only when the API exists.
                     if helpful == false then keep, why = false, "nothelpful" end
+                    -- Profession recipes (trade skills) are not bar-worthy.
+                    if trade then keep, why = false, "trade" end
                     if keep then
                         local btype = GetSpellBookItemInfo and select(1, GetSpellBookItemInfo(i, "spell"))
                         local kind = (btype == "MOUNT") and "mount" or "spell"
@@ -242,7 +259,7 @@ local function BuildEntries()
     return out
 end
 
--- Tooltip preview: hold (right button) on a row shows the entry's tooltip;
+-- Tooltip preview: hold (right button) on a cell shows the entry's tooltip;
 -- release hides it. Also fires on hover for desktop. Uses the global
 -- GameTooltip (the addon-created one lacks template methods on this client).
 local function ShowEntryTooltip(entry)
@@ -273,29 +290,47 @@ local function ClosePicker()
     if menu then menu:Hide() end
 end
 
--- This client strips SetClipsChildren (like SetVerticalScroll and
--- SetObeyStepOnDrag), so the viewport can't clip. Rows/headers outside the
--- visible area are hidden manually instead.
-local function UpdateRowVisibility(offset)
-    local viewH = math.max(100, (menu:GetHeight() or MENU_H) - 44 - 12)
-    for k, r in ipairs(rowPool) do
-        if r:IsShown() and r.rowY then
-            local y = r.rowY
-            if y + ROW_H < offset or y > offset + viewH then r:Hide() else r:Show() end
-        end
+-- Get (or lazily create) the n-th cell of a category column. Cells are pooled
+-- so repeated opens don't churn frame creation.
+local function GetCell(kind, n)
+    local col = columns[kind]
+    local cell = col.cells[n]
+    if not cell then
+        cell = CreateFrame("Button", nil, menu)
+        cell:SetSize(CELL_W, CELL_H)
+        cell.icon = cell:CreateTexture(nil, "BACKGROUND")
+        cell.icon:SetSize(20, 20)
+        cell.icon:SetPoint("LEFT", cell, "LEFT", 2, 0)
+        cell.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        cell.name = cell:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        cell.name:SetPoint("LEFT", cell.icon, "RIGHT", 3, 0)
+        cell.name:SetPoint("RIGHT", cell, "RIGHT", -2, 0)
+        cell.name:SetJustifyH("LEFT")
+        cell.count = cell:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        cell.count:SetPoint("BOTTOMRIGHT", cell.icon, "BOTTOMRIGHT", 0, 0)
+        cell:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+        cell:SetScript("OnClick", function(self)
+            if self.entry then AssignEntry(self.entry) end
+        end)
+        cell:SetScript("OnMouseDown", function(self, button)
+            if button == "RightButton" and self.entry then ShowEntryTooltip(self.entry) end
+        end)
+        cell:SetScript("OnMouseUp", function(self, button)
+            if button == "RightButton" then HideEntryTooltip() end
+        end)
+        cell:SetScript("OnEnter", function(self)
+            if self.entry then ShowEntryTooltip(self.entry) end
+        end)
+        cell:SetScript("OnLeave", HideEntryTooltip)
+        col.cells[n] = cell
     end
-    for k, h in ipairs(headerPool) do
-        if h:IsShown() and h.headerY then
-            local y = h.headerY
-            if y + HEADER_H < offset or y > offset + viewH then h:Hide() else h:Show() end
-        end
-    end
+    return cell
 end
 
 local function CreateMenu()
     if menu then menu:Hide() end -- a partial menu from an aborted build
     menu = CreateFrame("Frame", "MobileUIDynamicBarMenu", UIParent)
-    menu:SetSize(MENU_W, MENU_H)
+    menu:SetSize(MENU_W, MENU_H_MAX)
     menu:SetFrameStrata("DIALOG")
     menu:SetClampedToScreen(true)
     menu:SetBackdrop({
@@ -339,38 +374,15 @@ local function CreateMenu()
     closeBtn:SetText("X")
     closeBtn:SetScript("OnClick", ClosePicker)
 
-    -- Viewport + manual scroll: this Ascension client strips ScrollFrame's
-    -- SetVerticalScroll and Slider's SetObeyStepOnDrag (verified in-game), so
-    -- no ScrollFrame — a plain clipped frame whose content is moved by the
-    -- scrollbar instead.
-    viewport = CreateFrame("Frame", nil, menu)
-    viewport:SetPoint("TOPLEFT", menu, "TOPLEFT", 14, -44)
-    viewport:SetPoint("BOTTOMRIGHT", menu, "BOTTOMRIGHT", -30, 12)
-    -- SetClipsChildren is stripped on this client; rows are hidden manually
-    -- via UpdateRowVisibility instead.
-    if viewport.SetClipsChildren then viewport:SetClipsChildren(true) end
-    content = CreateFrame("Frame", nil, viewport)
-    content:SetWidth(MENU_W - 14 - 30)
-    content:SetPoint("TOPLEFT", viewport, "TOPLEFT", 0, 0)
-
-    scrollBar = CreateFrame("Slider", nil, menu, "UIPanelScrollBarTemplate")
-    scrollBar:SetPoint("TOPRIGHT", viewport, "TOPRIGHT", 4, 0)
-    scrollBar:SetPoint("BOTTOMRIGHT", viewport, "BOTTOMRIGHT", 4, 0)
-    scrollBar:SetMinMaxValues(0, 1)
-    scrollBar:SetValue(0)
-    scrollBar:SetValueStep(1)
-    scrollBar:SetScript("OnValueChanged", function(self, value)
-        content:ClearAllPoints()
-        content:SetPoint("TOPLEFT", viewport, "TOPLEFT", 0, value)
-        UpdateRowVisibility(value)
-    end)
-    viewport:EnableMouseWheel(true)
-    viewport:SetScript("OnMouseWheel", function(self, delta)
-        local _, max = scrollBar:GetMinMaxValues()
-        local v = scrollBar:GetValue() - delta * 30
-        if v < 0 then v = 0 elseif v > max then v = max end
-        scrollBar:SetValue(v)
-    end)
+    -- 3 category columns: header + pooled cells.
+    for ci, kind in ipairs(GROUP_ORDER) do
+        local col = { cells = {} }
+        col.header = menu:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        col.header:SetText(GROUP_NAMES[kind])
+        col.header:SetTextColor(1, 0.82, 0)
+        col.header:SetPoint("TOPLEFT", menu, "TOPLEFT", 14 + (ci - 1) * (COL_W + COL_GAP), -44)
+        columns[kind] = col
+    end
 
     -- Full-screen catcher below the menu: a tap anywhere outside dismisses
     -- (same pattern as the bag-swap menu).
@@ -381,98 +393,52 @@ local function CreateMenu()
     menuReady = true
 end
 
--- Rebuild the scrollable grouped list. Rows/headers are pooled so repeated
--- opens don't churn frame creation.
-local function RebuildList()
-    local usedRows, usedHeaders = 0, 0
-    local function GetRow()
-        usedRows = usedRows + 1
-        local r = rowPool[usedRows]
-        if not r then
-            r = CreateFrame("Button", nil, content)
-            r:SetHeight(ROW_H)
-            r.icon = r:CreateTexture(nil, "BACKGROUND")
-            r.icon:SetSize(ICON, ICON)
-            r.icon:SetPoint("LEFT", r, "LEFT", 6, 0)
-            r.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-            r.name = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            r.name:SetPoint("LEFT", r.icon, "RIGHT", 6, 0)
-            r.name:SetPoint("RIGHT", r, "RIGHT", -30, 0)
-            r.name:SetJustifyH("LEFT")
-            r.count = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            r.count:SetPoint("RIGHT", r, "RIGHT", -6, 0)
-            r:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
-            r:SetScript("OnClick", function(self)
-                if self.entry then AssignEntry(self.entry) end
-            end)
-            r:SetScript("OnMouseDown", function(self, button)
-                if button == "RightButton" and self.entry then ShowEntryTooltip(self.entry) end
-            end)
-            r:SetScript("OnMouseUp", function(self, button)
-                if button == "RightButton" then HideEntryTooltip() end
-            end)
-            r:SetScript("OnEnter", function(self)
-                if self.entry then ShowEntryTooltip(self.entry) end
-            end)
-            r:SetScript("OnLeave", HideEntryTooltip)
-            rowPool[usedRows] = r
-        end
-        r:Show()
-        return r
+-- Fill the category columns from the current entries. Cell height adapts so
+-- the tallest column fits the frame (no scrolling).
+local function PopulateColumns()
+    local byKind = { item = {}, spell = {}, mount = {} }
+    for _, e in ipairs(entries) do
+        local t = byKind[e.kind]
+        if t then table.insert(t, e) end
     end
-    local function GetHeader(text)
-        usedHeaders = usedHeaders + 1
-        local h = headerPool[usedHeaders]
-        if not h then
-            h = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            h:SetTextColor(1, 0.82, 0)
-            headerPool[usedHeaders] = h
-        end
-        h:SetText(text)
-        h:Show()
-        return h
+    local maxRows = 0
+    for _, kind in ipairs(GROUP_ORDER) do
+        local rows = math.ceil(#byKind[kind] / COLS_PER_CAT)
+        if rows > maxRows then maxRows = rows end
     end
-    for k = usedRows + 1, #rowPool do rowPool[k]:Hide() end
-    for k = usedHeaders + 1, #headerPool do headerPool[k]:Hide() end
-
-    local y = 0
-    local lastKind = nil
-    for _, entry in ipairs(entries) do
-        if entry.kind ~= lastKind then
-            lastKind = entry.kind
-            local h = GetHeader(GROUP_NAMES[entry.kind] or entry.kind)
-            h:ClearAllPoints()
-            h:SetPoint("TOPLEFT", content, "TOPLEFT", 4, -y)
-            h:SetPoint("TOPRIGHT", content, "TOPRIGHT", -4, -y)
-            h.headerY = y
-            y = y + HEADER_H
+    local capH = math.min(MENU_H_MAX, UIParent:GetHeight() - 30)
+    local availH = capH - 44 - HEADER_H - 12
+    local cellH = math.max(20, math.min(CELL_H, math.floor(availH / math.max(1, maxRows))))
+    local rowH = cellH + ROW_GAP
+    for ci, kind in ipairs(GROUP_ORDER) do
+        local col = columns[kind]
+        local list = byKind[kind]
+        local colX = 14 + (ci - 1) * (COL_W + COL_GAP)
+        for n, e in ipairs(list) do
+            local sc = (n - 1) % COLS_PER_CAT
+            local r  = math.floor((n - 1) / COLS_PER_CAT)
+            local cell = GetCell(kind, n)
+            cell:ClearAllPoints()
+            cell:SetPoint("TOPLEFT", menu, "TOPLEFT",
+                colX + sc * (CELL_W + CELL_GAP), -44 - HEADER_H - r * rowH)
+            cell:SetSize(CELL_W, cellH)
+            cell.entry = e
+            cell.icon:SetTexture(e.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+            cell.icon:Show()
+            cell.name:SetText(e.name or "")
+            local txt = ""
+            if e.kind == "item" then
+                if e.count and e.count > 1 then txt = tostring(e.count) end
+            elseif tonumber(e.dur) and e.dur > 0 then
+                txt = string.format("%dm", math.ceil(e.dur / 60))
+            end
+            cell.count:SetText(txt)
+            cell:Show()
         end
-        local r = GetRow()
-        r:ClearAllPoints()
-        r:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -y)
-        r.rowY = y
-        r:SetWidth(content:GetWidth())
-        r.entry = entry
-        r.icon:SetTexture(entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
-        r.icon:Show()
-        r.name:SetText(entry.name or "")
-        local txt = ""
-        if entry.kind == "item" then
-            if entry.count and entry.count > 1 then txt = tostring(entry.count) end
-        elseif tonumber(entry.dur) and entry.dur > 0 then
-            txt = string.format("%dm", math.ceil(entry.dur / 60))
-        end
-        r.count:SetText(txt)
-        y = y + ROW_H
+        for n = #list + 1, #col.cells do col.cells[n]:Hide() end
     end
-    content:SetHeight(y)
-    local viewH = (menu:GetHeight() or MENU_H) - 44 - 12
-    local maxScroll = math.max(0, y - viewH)
-    scrollBar:SetMinMaxValues(0, maxScroll)
-    scrollBar:SetValue(0)
-    content:ClearAllPoints()
-    content:SetPoint("TOPLEFT", viewport, "TOPLEFT", 0, 0)
-    UpdateRowVisibility(0)
+    local frameH = 44 + HEADER_H + maxRows * rowH + 12
+    menu:SetSize(MENU_W, math.min(capH, frameH))
 end
 
 local function OpenPicker(btnIndex)
@@ -490,8 +456,7 @@ local function OpenPicker(btnIndex)
     else
         menuHint:SetText("Tap to assign, hold for tooltip.")
     end
-    menu:SetSize(MENU_W, math.min(MENU_H, math.max(200, UIParent:GetHeight() - 30)))
-    RebuildList()
+    PopulateColumns()
     local btn = _G["MultiBarBottomLeftButton" .. btnIndex]
     local left, bottom, height = btn and btn:GetLeft(), btn and btn:GetBottom(), btn and btn:GetHeight()
     menu:ClearAllPoints()
