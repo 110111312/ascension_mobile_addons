@@ -1287,8 +1287,15 @@ end
 -- bar, so slot resolution for the scatter buttons is unaffected.
 local function HideBar2Tail()
     for i = 6, 12 do
-        local b = _G["MultiBarBottomLeftButton" .. i]
-        if b and b:IsShown() then b:Hide() end
+        -- The dynamic action bar (bottom-left strip) owns buttons 6-10 while
+        -- enabled — leave them shown so the strip stays visible through the
+        -- guard's per-frame re-hide.
+        if MobileUIDynamicBar and MobileUIDynamicBar.TailUsed and MobileUIDynamicBar.TailUsed(i) then
+            -- dynamic bar owns this button; keep it shown
+        else
+            local b = _G["MultiBarBottomLeftButton" .. i]
+            if b and b:IsShown() then b:Hide() end
+        end
     end
 end
 -- Park the tail buttons far off-screen. Hide() alone is not combat-proof: the
@@ -1526,6 +1533,9 @@ function MobileUILayout:Apply()
     step("ApplyPartyFrames", ApplyPartyFrames)
     step("ApplyChatFrame", ApplyChatFrame)
     step("ApplyHideFrames", ApplyHideFrames)
+    -- Dynamic action bar (bottom-left strip): runs after the tail is parked
+    -- so it can re-anchor buttons 6-10 from the parked spot to the strip.
+    step("ApplyDynamicBar", function() MobileUIDynamicBar:Apply() end)
     -- Wrapped in a closure so a nil MobileUIWorldMap is caught by step()'s pcall
     -- and logged as "ERROR in ApplyWorldMap" instead of aborting Apply silently.
     step("ApplyWorldMap", function() MobileUIWorldMap:Apply() end)
@@ -1539,6 +1549,9 @@ function MobileUILayout:Revert()
         return
     end
     if not saved.init then return end
+    -- Dynamic bar first: it re-parks its strip buttons (6-10), then
+    -- RevertHideFrames restores the whole tail from saved.bar2tail.
+    if MobileUIDynamicBar and MobileUIDynamicBar.Revert then MobileUIDynamicBar:Revert() end
     RevertHideFrames()
     RevertMap()
     RevertMenuBar()

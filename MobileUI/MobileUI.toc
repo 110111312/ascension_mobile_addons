@@ -2,7 +2,7 @@
 ## Title: MobileUI
 ## Notes: Mobile-optimized UI scaling + layout revamp for Ascension WoW
 ## Author: encap
-## Version: 2.8.0
+## Version: 2.9.0
 ## SavedVariables: MobileDB, MobileUIDebugLog
 
 MobileUILib.lua
@@ -16,4 +16,5 @@ MobileUIWorldMap.lua
 MobileUIWorldMapPanel.lua
 MobileUIWorldMapMarkers.lua
 MobileUILayout.lua
+MobileUIDynamicBar.lua
 MobileUIOptions.xml
