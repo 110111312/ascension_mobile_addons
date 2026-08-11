@@ -78,6 +78,7 @@ local menu, clickCatcher, menuTitle, menuHint, closeBtn
 local viewport, content, scrollBar
 local rowPool, headerPool = {}, {}
 local pickerButton, entries
+local menuReady = false   -- true only after CreateMenu fully builds the menu
 -- Forward refs: assigned below; referenced by the menu rows' OnClick and by
 -- the menu OnHide (which runs before they are defined).
 local AssignEntry, ReturnCursorContent
@@ -273,6 +274,7 @@ local function ClosePicker()
 end
 
 local function CreateMenu()
+    if menu then menu:Hide() end -- a partial menu from an aborted build
     menu = CreateFrame("Frame", "MobileUIDynamicBarMenu", UIParent)
     menu:SetSize(MENU_W, MENU_H)
     menu:SetFrameStrata("DIALOG")
@@ -354,6 +356,7 @@ local function CreateMenu()
     clickCatcher:SetAllPoints(UIParent)
     clickCatcher:SetFrameStrata("DIALOG")
     clickCatcher:SetScript("OnMouseDown", ClosePicker)
+    menuReady = true
 end
 
 -- Rebuild the scrollable grouped list. Rows/headers are pooled so repeated
@@ -450,7 +453,7 @@ end
 local function OpenPicker(btnIndex)
     if not active then return end
     pickerButton = btnIndex
-    if not menu then CreateMenu() end
+    if not menuReady then CreateMenu() end
     entries = BuildEntries()
     MobileUI_Debug(string.format("DynamicBar: picker opened btn=%d entries=%d",
         btnIndex, #entries))
