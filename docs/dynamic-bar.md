@@ -56,12 +56,23 @@ A `Button` with `RegisterForClicks("RightButtonDown", ...)` received **no mouse 
 
 - **Usable bag items** — any item with a "Use:" effect (`GetItemSpell(link)
   ~= nil`), deduped by item ID, showing icon + stack count.
-- **Buff spells** — known, non-passive spells (`IsPassiveSpell` filter);
-  spells currently active on the player (`UnitBuff`) sort to the top.
-  3.3.5 has no "is this a buff" flag, so this is a pragmatic filter — v1
-  lists all non-passive spells with active buffs first.
+- **Buff spells** — known spells filtered to *helpful* (`IsHelpfulSpell`,
+  usable on player/friendly) minus attack spells (`IsAttackSpell`) minus
+  passives (`IsPassiveSpell`). Spells currently active on the player
+  (`UnitBuff`) sort first and show remaining time (e.g. `12m`).
+- Spellbook scan order: `GetSpellBookItemName` (documented) → `GetSpellName`
+  → `GetSpellBookItemInfo`+`GetSpellInfo` (undocumented last resort). A
+  debug line reports which path ran and how many were kept.
 - Grid: 4×3 (12 per page), page `<`/`>` controls, clamped to screen, anchored
-  above the held button.
+  above the held button. Each cell shows icon + name (duration for active
+  buffs).
+
+> **Why not "10+ minute buffs" exactly?** 3.3.5 has no spell-duration API
+> for the spellbook, so a strict duration filter is impossible — the
+> helpful/non-attack/non-passive filter is the honest closest match, and
+> it's exactly the pool your long buffs (Battle Shout, Fort, MotW, AI,
+> Blessings…) live in. If the list is too noisy, a curated whitelist of
+> classic long buffs can be added.
 
 Spells assign as plain spell slots: clicking casts at the current target
 (stock behavior). Target-required buffs (Blessing-type) need a target or an

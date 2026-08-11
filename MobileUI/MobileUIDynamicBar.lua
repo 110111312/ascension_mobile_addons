@@ -147,34 +147,59 @@ local function BuildEntries()
             end
         end
     end
-    -- --- Buff spells: known non-passive spells; active player buffs first ---
+    -- --- Buff spells: known helpful, non-attack, non-passive spells ----------
+    -- 3.3.5 exposes no spell-duration API, so "long friendly buffs" can't be
+    -- read from the book; the closest honest filter is IsHelpfulSpell (usable
+    -- on player/friendly) minus attack spells minus passives. Spells currently
+    -- active on the player sort first and get a remaining-time hint.
     local buffSet = {}
     for i = 1, 40 do
-        local name = UnitBuff("player", i)
+        local name, _, _, _, dur = UnitBuff("player", i)
         if not name then break end
-        buffSet[name] = true
+        buffSet[name] = dur or 0
     end
     local spells = {}
-    if GetSpellBookItemInfo then
-        local nt = GetNumSpellTabs() or 0
-        for tab = 1, nt do
-            local _, _, offset, num = GetSpellTabInfo(tab)
-            if offset and num then
-                for i = offset + 1, offset + num do
+    local spellNameFn = GetSpellBookItemName or GetSpellName
+    local nt = GetNumSpellTabs() or 0
+    local checked = 0
+    for tab = 1, nt do
+        local _, _, offset, num = GetSpellTabInfo(tab)
+        if offset and num then
+            for i = offset + 1, offset + num do
+                checked = checked + 1
+                local sname = spellNameFn and spellNameFn(i, "spell")
+                if not sname and GetSpellBookItemInfo then
+                    -- Last resort (undocumented in the local reference, but
+                    -- SpellBookFrame uses it on stock 3.3.5).
                     local stype, sid = GetSpellBookItemInfo(i, "spell")
                     if stype == "SPELL" and sid then
-                        local sname, _, sicon = GetSpellInfo(sid)
-                        if sname and not IsPassiveSpell(sname) then
-                            table.insert(spells, {
-                                kind = "spell", spellbookID = i, name = sname,
-                                icon = sicon, buff = buffSet[sname] and true or false,
-                            })
-                        end
+                        sname = select(1, GetSpellInfo(sid))
+                    end
+                end
+                if sname then
+                    local passive = IsPassiveSpell and IsPassiveSpell(i, "spell")
+                    local attack  = IsAttackSpell and IsAttackSpell(i, "spell")
+                    local keep    = true
+                    if passive then keep = false end
+                    if attack  then keep = false end
+                    -- Restrict to friendly-target spells only when the API exists.
+                    if IsHelpfulSpell and not IsHelpfulSpell(i, "spell") then keep = false end
+                    if keep then
+                        table.insert(spells, {
+                            kind = "spell", spellbookID = i, name = sname,
+                            icon = GetSpellTexture and GetSpellTexture(i, "spell"),
+                            buff = buffSet[sname] ~= nil,
+                            dur  = buffSet[sname] or 0,
+                        })
                     end
                 end
             end
         end
     end
+    MobileUI_Debug(string.format(
+        "DynamicBar: spell scan (bookname=%s bookinfo=%s) %d checked -> %d kept (helpful/non-attack/non-passive)",
+        tostring(GetSpellBookItemName ~= nil), tostring(GetSpellBookItemInfo ~= nil),
+        checked, #spells))
     table.sort(spells, function(a, b)
         if a.buff ~= b.buff then return a.buff and not b.buff end
         return a.name < b.name
@@ -199,7 +224,14 @@ local function RenderPage()
             cell.entry = entry
             cell.icon:SetTexture(entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
             cell.icon:Show()
-            cell.count:SetText(entry.count and entry.count > 1 and tostring(entry.count) or "")
+            local txt = ""
+            if entry.kind == "item" then
+                if entry.count and entry.count > 1 then txt = tostring(entry.count) end
+            elseif entry.kind == "spell" and entry.dur and entry.dur > 0 then
+                txt = string.format("%dm", math.ceil(entry.dur / 60))
+            end
+            cell.count:SetText(txt)
+            cell.name:SetText(entry.name or "")
             cell:Show()
         else
             cell.entry = nil
@@ -256,6 +288,10 @@ local function CreateMenu()
         cell.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         cell.count = cell:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         cell.count:SetPoint("BOTTOMRIGHT", cell, "BOTTOMRIGHT", -2, 2)
+        cell.name = cell:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        cell.name:SetPoint("BOTTOM", cell, "BOTTOM", 0, 2)
+        cell.name:SetWidth(CELL - 4)
+        cell.name:SetJustifyH("CENTER")
         cell:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
         cell:SetScript("OnClick", function(self)
             if self.entry then AssignEntry(self.entry) end
