@@ -111,10 +111,21 @@ re-arming another row.
 
 **Stance/stealth filter:** `GetNumTooltipLines` is stripped, so the
 requirement is read by scanning the tooltip's font strings via
-`GameTooltip:GetRegions()` for a line starting with `Requires` that also
-mentions `Stealth`, `Form` or `Stance` (color codes stripped first).
-`Requires level`, `Requires a shield` etc. are ignored. Results are cached by
-spell name; rejected spells log as `name(stance)`.
+`GameTooltip:GetRegions()`. A `Requires X` line is a stance/stealth
+requirement when X is a **skill name**: single word (or `the <word>`), not
+`level N`, not `a/an <item>` — plus the `Stealth`/`Form`/`Stance` keywords
+(case-insensitive). This catches custom Ascension stances like
+`Requires Moonshroud` (the class stealth skill, which isn't even in the
+spellbook). Every `Requires` line is logged
+(`stance-scan: <spell> requires '<x>' -> FILTER/keep`) so the heuristic can
+be tuned from data. Results cached by spell name; rejected spells log as
+`name(stance)`.
+
+**Picker rows are tap-tap** (keyed on button-**down**, which is more
+reliable than the up on a flaky phone connection): first tap shows the
+tooltip and arms the cell (gold outline), second tap on the same cell
+assigns. Tapping a different row re-arms it; armed state + tooltip reset on
+dismiss.
 Spellbook scan order: `GetSpellBookItemName` (documented) → `GetSpellName`
 → `GetSpellBookItemInfo`+`GetSpellInfo` (undocumented last resort). A debug
 line reports which path ran and the candidate counts

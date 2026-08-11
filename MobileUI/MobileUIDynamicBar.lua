@@ -162,10 +162,14 @@ end
 
 local stanceCache = {}
 -- Detect spells that require a stance/stealth (e.g. "Requires Stealth",
--- "Requires Cat Form") by scanning the tooltip's font strings. The tooltip
--- line-reading API (GetNumTooltipLines) is stripped on this client, so we
--- iterate GetRegions() instead. Only stance/stealth requirements match —
--- "Requires level", "Requires a shield" etc. are ignored. Cached by name.
+-- "Requires Moonshroud" — Ascension's custom stealth skill) by scanning the
+-- tooltip's font strings. The tooltip line-reading API (GetNumTooltipLines)
+-- is stripped on this client, so we iterate GetRegions() instead.
+--
+-- A "Requires X" line is a stance/stealth requirement when X is a skill
+-- name: single word (or "the <word>"), not "level N", not "a/an <item>".
+-- Standard stances also match the Stealth/Form/Stance keywords. Cached by
+-- name; every Requires line is logged so the heuristic can be tuned.
 local function SpellRequiresStance(spellbookID, sname)
     if stanceCache[sname] ~= nil then return stanceCache[sname] end
     if not GameTooltip or not GameTooltip.SetSpell then return false end
@@ -175,11 +179,20 @@ local function SpellRequiresStance(spellbookID, sname)
         GameTooltip:SetSpell(spellbookID, "spell")
         for _, r in ipairs({ GameTooltip:GetRegions() }) do
             if r and r.GetText and r:GetObjectType() == "FontString" then
-                local t = (r:GetText() or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
-                if t:match("^Requires") and
-                   (t:match("Stealth") or t:match("Form") or t:match("Stance")) then
-                    requires = true
-                    return
+                local t = (r:GetText() or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("^%s+", "")
+                local req = t:match("^Requires%s*:?%s*(.+)$")
+                if req then
+                    req = req:gsub("%s*%(.+%)%s*$", ""):gsub("[%.%s]+$", "")
+                    local rl = req:lower()
+                    local core = req:gsub("^[Tt]he%s+", "")
+                    local singleWord = not core:match("%s")
+                    if rl:match("stealth") or rl:match("form") or rl:match("stance")
+                       or (not rl:match("level") and not rl:match("^a[n]?%s") and singleWord) then
+                        requires = true
+                        MobileUI_Debug(string.format("DynamicBar: stance-scan: %s requires '%s' -> FILTER", sname, req))
+                        return
+                    end
+                    MobileUI_Debug(string.format("DynamicBar: stance-scan: %s requires '%s' -> keep", sname, req))
                 end
             end
         end
@@ -420,10 +433,11 @@ local function GetCell(kind, n)
         })
         cell:SetBackdropBorderColor(1, 0.82, 0, 0)
         -- Tap-tap: first tap shows the tooltip and arms the cell, second tap
-        -- on the same cell assigns. (Hold-for-tooltip was dropped — the hold
-        -- gesture is flaky on Artemis.)
-        cell:SetScript("OnClick", function(self)
-            if not self.entry then return end
+        -- on the same cell assigns. Keyed on OnMouseDown (button-DOWN) — the
+        -- down is more reliable than the up on a flaky phone connection, and
+        -- the first tap after the menu opens was observed to miss OnClick.
+        cell:SetScript("OnMouseDown", function(self, button)
+            if not self.entry or button ~= "LeftButton" then return end
             if armedCell == self then
                 armedCell = nil
                 self:SetBackdropBorderColor(1, 0.82, 0, 0)
