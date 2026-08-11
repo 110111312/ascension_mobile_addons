@@ -300,8 +300,9 @@ end
 -- GameTooltip (the addon-created one lacks template methods on this client).
 local function ShowEntryTooltip(cell, entry)
     if not entry then return end
-    MobileUI_Debug(string.format("DynamicBar: tooltip kind=%s sbi=%s",
-        entry.kind, tostring(GameTooltip.SetSpellBookItem ~= nil)))
+    MobileUI_Debug(string.format("DynamicBar: tooltip kind=%s sbi=%s ssp=%s",
+        entry.kind, tostring(GameTooltip.SetSpellBookItem ~= nil),
+        tostring(GameTooltip.SetSpell ~= nil)))
     local ok, err = pcall(function()
         -- Anchor to the cell, not the menu: the menu is 520px wide near the
         -- left edge, so ANCHOR_RIGHT of the menu would push the tooltip
@@ -315,9 +316,13 @@ local function ShowEntryTooltip(cell, entry)
             end
         elseif entry.spellbookID then
             -- GetSpellBookItemInfo's 2nd return (spellID) is nil on this
-            -- client and GetSpellInfo has no spellID return, so SetSpellByID
-            -- can't work — use the book-slot form instead.
-            if GameTooltip.SetSpellBookItem then
+            -- client and GetSpellInfo has no spellID return (9-value form),
+            -- so SetSpellByID can't work. SetSpellBookItem is also stripped
+            -- (verified in-game). SetSpell(id, "bookType") is the book-slot
+            -- form that works.
+            if GameTooltip.SetSpell then
+                GameTooltip:SetSpell(entry.spellbookID, "spell")
+            elseif GameTooltip.SetSpellBookItem then
                 GameTooltip:SetSpellBookItem(entry.spellbookID, "spell")
             elseif entry.spellID then
                 GameTooltip:SetSpellByID(entry.spellID)
