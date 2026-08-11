@@ -266,10 +266,6 @@ local function BuildEntries()
         table.insert(tabNames, string.format("%s(%s)", tname or "?", tostring(tnum)))
     end
     MobileUI_Debug("DynamicBar: spell tabs: " .. table.concat(tabNames, ", "))
-    MobileUI_Debug(string.format(
-        "DynamicBar: spell APIs: helpful=%d harmful=%d attack=%d trade=%d passive=%d",
-        IsHelpfulSpell and 1 or 0, IsHarmfulSpell and 1 or 0,
-        IsAttackSpell and 1 or 0, IsTradeSkill and 1 or 0, IsPassiveSpell and 1 or 0))
     local checked = 0
     for tab = 1, nt do
         local _, _, offset, num = GetSpellTabInfo(tab)
@@ -288,24 +284,8 @@ local function BuildEntries()
             if sname then
                 local passive = IsPassiveSpell and IsPassiveSpell(i, "spell")
                 local attack  = IsAttackSpell and IsAttackSpell(i, "spell")
-                local helpful = IsHelpfulSpell and IsHelpfulSpell(i, "spell")
                 local harmful = IsHarmfulSpell and IsHarmfulSpell(i, "spell")
                 local trade   = IsTradeSkill and IsTradeSkill(i, "spell")
-                -- Per-spell diagnostic: dump every classification signal so
-                -- we can find what separates attack spells from buffs on
-                -- this client (Ascension has 3x classes — a blacklist can't
-                -- cover them). gi4..gi9 are the raw GetSpellInfo returns so
-                -- we also learn its real return order here.
-                local btype, sid = GetSpellBookItemInfo and GetSpellBookItemInfo(i, "spell")
-                local g1, g2, g3, g4, g5, g6, g7, g8, g9 = GetSpellInfo(i, "spell")
-                MobileUI_Debug(string.format(
-                    "DynamicBar: spell: %s | type=%s hlp=%s hrm=%s atk=%s pas=%s trd=%s | gi4=%s gi5=%s gi6=%s gi7=%s gi8=%s gi9=%s | sid=%s",
-                    sname, tostring(btype),
-                    tostring(helpful), tostring(harmful), tostring(attack),
-                    tostring(passive), tostring(trade),
-                    tostring(g4), tostring(g5), tostring(g6),
-                    tostring(g7), tostring(g8), tostring(g9),
-                    tostring(sid)))
                 local keep    = true
                 local why     = nil
                 if passive then keep, why = false, "passive" end
@@ -372,9 +352,6 @@ end
 -- GameTooltip (the addon-created one lacks template methods on this client).
 local function ShowEntryTooltip(cell, entry)
     if not entry then return end
-    MobileUI_Debug(string.format("DynamicBar: tooltip kind=%s sbi=%s ssp=%s",
-        entry.kind, tostring(GameTooltip.SetSpellBookItem ~= nil),
-        tostring(GameTooltip.SetSpell ~= nil)))
     local ok, err = pcall(function()
         -- Anchor to the cell, not the menu: the menu is 520px wide near the
         -- left edge, so ANCHOR_RIGHT of the menu would push the tooltip
@@ -634,7 +611,6 @@ local function OpenPicker(btnIndex)
     clickCatcher:Show()
     menu:SetFrameLevel(clickCatcher:GetFrameLevel() + 2)
     menu:Show()
-    MobileUI_Debug(string.format("DynamicBar: picker shown for btn %d", btnIndex))
 end
 
 -- ============================================================================

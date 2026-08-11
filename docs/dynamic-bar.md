@@ -81,9 +81,9 @@ adapts to the tallest column (cell height shrinks if a category is long):
   or a name heuristic (Ascension's custom mount spells report book type
   `"SPELL"`, so names containing `Mount` are classified as mounts).
 
-**Filtering reality on this client (from the per-spell dump):**
-`IsHelpfulSpell`, `IsHarmfulSpell`, `IsAttackSpell` and `IsPassiveSpell` all
-**exist and work**; `IsTradeSkill` is stripped (nil). Two quirks matter:
+**Filtering reality on this client:** `IsHelpfulSpell`, `IsHarmfulSpell`,
+`IsAttackSpell` and `IsPassiveSpell` all **exist and work**; `IsTradeSkill`
+is stripped (nil). Two quirks matter:
 
 - **`IsHelpfulSpell` can't be used as a filter** — it returns `nil` (not
   `false`) for harmful spells *and* for weapon enchants (Weapon Engraving,
@@ -95,8 +95,8 @@ adapts to the tallest column (cell height shrinks if a category is long):
   custom tabs (Engravement / Glyphic / Riftblade) are scanned normally.
 
 Recipes: `IsTradeSkill` is stripped, so they can't be filtered by API yet.
-The per-spell dump (`DynamicBar: spell: <name> | type=… hlp=… hrm=… …`)
-logs every checked spell's classification signals so a real recipe filter
+The `candidate-rejected:` log line lists every dropped spell with its reason
+(`passive`/`attack`/`harmful`/`general`/`stance`), so a real recipe filter
 can be derived from data instead of guessed.
 
 Each row: small icon (20px) + name + count/duration. Tap a row once to
@@ -130,6 +130,16 @@ only on the first touch per open and cannot be relied on for the arm state
 (an earlier `wasArmed`-in-`OnEnter` design failed exactly this way). Tapping
 a different row re-arms it; armed state + tooltip reset on dismiss. Every
 cell click is logged (`cell click btn=… armed=… entry=…`) for tuning.
+
+**First-open tap-tap bug (fixed):** on the first picker open after login,
+`CreateMenu()` runs and ends with `menu:Hide()`, whose `OnHide` script nils
+`pickerButton`. The old code set `pickerButton` *before* `CreateMenu()`, so
+on the first open it was nil by the time the second tap called
+`AssignEntry` — which silently returned and never assigned (second opens
+skipped `CreateMenu`, so they worked). `OpenPicker` now sets `pickerButton`
+**after** `CreateMenu()`, and `AssignEntry` logs its `pickerButton` value so
+a regression is visible in the ring immediately.
+
 Spellbook scan order: `GetSpellBookItemName` (documented) → `GetSpellName`
 → `GetSpellBookItemInfo`+`GetSpellInfo` (undocumented last resort). A debug
 line reports which path ran and the candidate counts
@@ -188,6 +198,24 @@ original anchors and shown state from `saved.bar2tail`).
 - Interface Options → MobileUI → "Dynamic Action Bar (tap = use, hold =
   assign items/buffs)"
 - Saved var: `MobileDB.dynamicBar`
+
+## Debug log (ring buffer only, no chat prints)
+
+All `DynamicBar:` lines go to the `MobileUIDebugLog` ring buffer (view with
+`/mui debug`; on disk after `/reload`/logout). What's logged:
+
+- `applied 6 button(s) size=… pitch=… x0=… y=…` — strip geometry (apply)
+- `btn <name> hold` / `btn <name> down button=…` — hold detection
+- `OpenPicker btn=… createMenu=…` / `picker opened btn=… entries=…` — open
+- `cell click btn=… armed=… entry=…` — tap-tap state per tap
+- `AssignEntry pickerButton=… entry=…` — assignment entry (nil pickerButton
+  = the first-open bug regressed)
+- `assigned item/spell '…' to btn N (slot N)` + `slot N now type=… id=…` —
+  assignment result + verification
+- `spell tabs: …` / `N candidates (X spells, Y mounts)` / `kept: …` /
+  `candidate-rejected: …` — spell scan summary
+- `stance-scan: <spell> requires '<x>' -> FILTER/keep` — stance heuristic
+- `tooltip ERROR: …` / `OpenPicker ERROR: …` — pcall-trapped failures
 
 ## In-game verification checklist
 
