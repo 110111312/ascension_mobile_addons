@@ -177,7 +177,9 @@ local function BuildEntries()
     -- nothing, fall back to the candidate list so the picker never goes empty.
     local buffSet = {}
     for i = 1, 40 do
-        local name, _, _, _, dur = UnitBuff("player", i)
+        -- UnitBuff: name, rank, icon, count, dispelType, DURATION, ...
+        -- (duration is the 6th return — the 5th is dispelType, a string)
+        local name, _, _, _, _, dur = UnitBuff("player", i)
         if not name then break end
         buffSet[name] = dur or 0
     end
@@ -270,7 +272,7 @@ local function RenderPage()
             local txt = ""
             if entry.kind == "item" then
                 if entry.count and entry.count > 1 then txt = tostring(entry.count) end
-            elseif entry.kind == "spell" and entry.dur and entry.dur > 0 then
+            elseif entry.kind == "spell" and tonumber(entry.dur) and entry.dur > 0 then
                 txt = string.format("%dm", math.ceil(entry.dur / 60))
             end
             cell.count:SetText(txt)
