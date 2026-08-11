@@ -17,14 +17,15 @@
 --   Hold (right click) -> assign: an OnMouseDown script installed on the
 --                         stock button (same way the layout installs OnEnter
 --                         on the arc buttons) opens the picker on right-down:
---                         usable bag items (GetItemSpell ~= nil) + known
---                         non-passive spells, active player buffs sorted
---                         first. Tapping an entry assigns it to the button's
---                         action slot via PickupContainerItem/PickupSpell +
---                         PlaceAction — not on the taint-protected use path.
---                         The stock right-click pickup on release puts the
---                         slot's item on the cursor; ClosePicker / AssignEntry
---                         re-place it (PlaceAction) so nothing is lost.
+--                         usable bag items (GetItemSpell ~= nil) + long buffs
+--                         (whitelisted Ascension buffs + anything currently
+--                         active on the player, sorted first). Tapping an
+--                         entry assigns it to the button's action slot via
+--                         PickupContainerItem/PickupSpell + PlaceAction — not
+--                         on the taint-protected use path. The stock
+--                         right-click pickup on release puts the slot's item
+--                         on the cursor; ClosePicker / AssignEntry re-place it
+--                         (PlaceAction) so nothing is lost.
 --
 -- Why no catcher overlay: a Button with RegisterForClicks(right-only) got
 -- NO mouse events on this client (verified in-game via the debug ring), and
@@ -55,6 +56,17 @@ local STRIP_END_MARG = 8   -- gap before the player frame
 
 local COLS, ROWS, CELL = 4, 3, 52
 local PER_PAGE = COLS * ROWS
+
+-- Long buffs that MUST always appear in the picker, even though their
+-- tooltips omit the duration line (Ascension custom spells — verified
+-- in-game: Etching of the Leylines is a 30-min buff with no tooltip
+-- duration). Add any other long buffs here.
+local ALWAYS_BUFF = {
+    ["Etching of the Leylines"] = true,
+    ["Runic Tattoos: Earth"]    = true,
+    ["Palm Sigil: Earth"]       = true,
+    ["Runeshroud"]              = true,
+}
 
 MobileUIDynamicBar = {}
 
@@ -122,41 +134,13 @@ end
 -- ============================================================================
 -- Picker menu
 -- ============================================================================
--- 3.3.5 has no spell-duration API, so buff durations come from the tooltip
--- ("Duration: X min/sec") — the standard addon technique. Cached per spell id.
--- Uses the GLOBAL GameTooltip: addon-created GameTooltip frames on this
--- client lack the template methods (verified in-game: SetSpellByID exists,
--- GetNumTooltipLines is nil), so a created frame crashes the scan.
-local durCache = {}
-
-local function SpellDuration(spellID)
-    if durCache[spellID] ~= nil then return durCache[spellID] end
-    local dur
-    if spellID and GameTooltip then
-        local ok, err = pcall(function()
-            GameTooltip:SetOwner(UIParent, "ANCHOR_NONE")
-            GameTooltip:SetSpellByID(spellID)
-            for line = 1, GameTooltip:GetNumTooltipLines() do
-                local fs = _G["GameTooltipTextLeft" .. line]
-                local text = fs and fs:GetText() or ""
-                local n, unit = text:match("^Duration: (%d+) ?(min|sec|hr)")
-                if n then
-                    n = tonumber(n)
-                    if unit == "min" then dur = n * 60
-                    elseif unit == "sec" then dur = n
-                    else dur = n * 3600 end
-                    break
-                end
-            end
-        end)
-        if not ok then
-            MobileUI_Debug("DynamicBar: tooltip duration scan failed: " .. tostring(err))
-        end
-        GameTooltip:Hide()
-    end
-    durCache[spellID] = dur or false
-    return dur
-end
+-- Buff durations: 3.3.5 has no spell-duration API, and the tooltip
+-- line-reading API (GetNumTooltipLines) does NOT exist on this Ascension
+-- client (verified in-game on both the global and addon-created tooltips), so
+-- duration can't be read at all. The picker instead keeps: whitelisted long
+-- buffs (ALWAYS_BUFF — Ascension custom buffs, always shown) plus anything
+-- currently active on the player (a discovery net for buffs not yet
+-- whitelisted).
 
 local function BuildEntries()
     local out = {}
@@ -237,22 +221,20 @@ local function BuildEntries()
     end
     local spells, keptNames, droppedNames = {}, {}, {}
     for _, sp in ipairs(candidates) do
-        local sid = select(7, GetSpellInfo(sp.spellbookID, "spell"))
-        local total = SpellDuration(sid) or 0
-        local src = total > 0 and "tooltip" or "none"
-        -- 600s = 10 min. Active custom buffs with no tooltip duration are
-        -- kept (they are clearly buffs — we can see them on the player).
-        local long = total >= 600 or (sp.buff and total == 0)
+        -- Keep whitelisted long buffs (Ascension tooltips omit the duration
+        -- line, so the tooltip can't be trusted here) and anything currently
+        -- active on the player (a discovery net for buffs not yet whitelisted).
+        local long = ALWAYS_BUFF[sp.name] or sp.buff
         if long then
             table.insert(spells, sp)
             table.insert(keptNames, sp.name)
         else
-            table.insert(droppedNames, string.format("%s(%s:%ds)", sp.name, src, total))
+            table.insert(droppedNames, sp.name)
         end
     end
     if #spells == 0 and #candidates > 0 then
         spells = candidates
-        MobileUI_Debug("DynamicBar: duration filter kept 0 — falling back to candidates")
+        MobileUI_Debug("DynamicBar: filter kept 0 — falling back to candidates")
     end
     MobileUI_Debug(string.format(
         "DynamicBar: spell scan (bookname=%s bookinfo=%s) %d checked -> %d candidates -> %d kept: %s",

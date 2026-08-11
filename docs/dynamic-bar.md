@@ -58,8 +58,10 @@ A `Button` with `RegisterForClicks("RightButtonDown", ...)` received **no mouse 
   ~= nil`), deduped by item ID, showing icon + stack count.
 - **Buff spells** — known spells filtered to *helpful* (`IsHelpfulSpell`,
   usable on player/friendly) minus attack spells (`IsAttackSpell`) minus
-  passives (`IsPassiveSpell`). Spells currently active on the player
-  (`UnitBuff`) sort first and show remaining time (e.g. `12m`).
+  passives (`IsPassiveSpell`). Then kept if **whitelisted** (`ALWAYS_BUFF`
+  in `MobileUIDynamicBar.lua` — the Ascension long buffs, always shown) or
+  **currently active** on the player (a discovery net for buffs not yet
+  whitelisted; shows remaining time, e.g. `12m`).
 - Spellbook scan order: `GetSpellBookItemName` (documented) → `GetSpellName`
   → `GetSpellBookItemInfo`+`GetSpellInfo` (undocumented last resort). A
   debug line reports which path ran and how many were kept.
@@ -67,12 +69,13 @@ A `Button` with `RegisterForClicks("RightButtonDown", ...)` received **no mouse 
   above the held button. Each cell shows icon + name (duration for active
   buffs).
 
-> **Why not "10+ minute buffs" exactly?** 3.3.5 has no spell-duration API
-> for the spellbook, so a strict duration filter is impossible — the
-> helpful/non-attack/non-passive filter is the honest closest match, and
-> it's exactly the pool your long buffs (Battle Shout, Fort, MotW, AI,
-> Blessings…) live in. If the list is too noisy, a curated whitelist of
-> classic long buffs can be added.
+> **Why a whitelist instead of "10+ minute buffs"?** 3.3.5 has no
+> spell-duration API, and this Ascension client has **no tooltip
+> line-reading API either** (`GetNumTooltipLines` is nil on both the global
+> and addon-created tooltips — verified in-game), so duration can't be read
+> at all. The whitelist is the source of truth for long buffs: add any new
+> long buff to `ALWAYS_BUFF` in `MobileUIDynamicBar.lua`. The active-buff
+> rule is the safety net for buffs not yet whitelisted.
 
 Spells assign as plain spell slots: clicking casts at the current target
 (stock behavior). Target-required buffs (Blessing-type) need a target or an
