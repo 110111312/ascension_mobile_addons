@@ -122,6 +122,36 @@ end
 -- ============================================================================
 -- Picker menu
 -- ============================================================================
+-- 3.3.5 has no spell-duration API, so buff durations come from the tooltip
+-- ("Duration: X min/sec") — the standard addon technique. Cached per spell id.
+local durTip   = CreateFrame("GameTooltip", "MobileUIDynamicBarTip", UIParent, "GameTooltipTemplate")
+durTip:SetOwner(UIParent, "ANCHOR_NONE")
+local durCache = {}
+
+local function SpellDuration(spellID)
+    if durCache[spellID] ~= nil then return durCache[spellID] end
+    local dur
+    if spellID and durTip then
+        local ok = pcall(durTip.SetSpellByID, durTip, spellID)
+        if ok then
+            for line = 1, durTip:GetNumTooltipLines() do
+                local fs = _G["MobileUIDynamicBarTipTextLeft" .. line]
+                local text = fs and fs:GetText() or ""
+                local n, unit = text:match("^Duration: (%d+) ?(min|sec|hr)")
+                if n then
+                    n = tonumber(n)
+                    if unit == "min" then dur = n * 60
+                    elseif unit == "sec" then dur = n
+                    else dur = n * 3600 end
+                    break
+                end
+            end
+        end
+    end
+    durCache[spellID] = dur or false
+    return dur
+end
+
 local function BuildEntries()
     local out = {}
     -- --- Usable bag items (any item with a "Use:" effect), deduped by id ---
@@ -147,22 +177,24 @@ local function BuildEntries()
             end
         end
     end
-    -- --- Buff spells: known helpful, non-attack, non-passive spells ----------
-    -- 3.3.5 exposes no spell-duration API, so "long friendly buffs" can't be
-    -- read from the book; the closest honest filter is IsHelpfulSpell (usable
-    -- on player/friendly) minus attack spells minus passives. Spells currently
-    -- active on the player sort first and get a remaining-time hint.
+    -- --- Buff spells: long friendly buffs (>= 10 min) or active buffs --------
+    -- Candidates: helpful (usable on player/friendly) minus attack spells
+    -- minus passives. Then a duration filter: keep spells whose tooltip says
+    -- "Duration: X min" with X >= 10, plus spells currently active on the
+    -- player that show no tooltip duration (custom buffs that are up).
+    -- Everything else (mounts, racials, toggles, resurrections, teleports,
+    -- heals, short buffs) is dropped. Safety: if the duration filter keeps
+    -- nothing, fall back to the candidate list so the picker never goes empty.
     local buffSet = {}
     for i = 1, 40 do
         local name, _, _, _, dur = UnitBuff("player", i)
         if not name then break end
         buffSet[name] = dur or 0
     end
-    local spells = {}
+    local candidates = {}
     local spellNameFn = GetSpellBookItemName or GetSpellName
     local nt = GetNumSpellTabs() or 0
     local checked = 0
-    local keptNames = {}
     for tab = 1, nt do
         local _, _, offset, num = GetSpellTabInfo(tab)
         if offset and num then
@@ -186,22 +218,43 @@ local function BuildEntries()
                     -- Restrict to friendly-target spells only when the API exists.
                     if IsHelpfulSpell and not IsHelpfulSpell(i, "spell") then keep = false end
                     if keep then
-                        table.insert(spells, {
+                        table.insert(candidates, {
                             kind = "spell", spellbookID = i, name = sname,
                             icon = GetSpellTexture and GetSpellTexture(i, "spell"),
                             buff = buffSet[sname] ~= nil,
                             dur  = buffSet[sname] or 0,
                         })
-                        table.insert(keptNames, sname)
                     end
                 end
             end
         end
     end
+    local spells, keptNames, droppedNames = {}, {}, {}
+    for _, sp in ipairs(candidates) do
+        local sid = select(7, GetSpellInfo(sp.spellbookID, "spell"))
+        local total = SpellDuration(sid) or 0
+        local src = total > 0 and "tooltip" or "none"
+        -- 600s = 10 min. Active custom buffs with no tooltip duration are
+        -- kept (they are clearly buffs — we can see them on the player).
+        local long = total >= 600 or (sp.buff and total == 0)
+        if long then
+            table.insert(spells, sp)
+            table.insert(keptNames, sp.name)
+        else
+            table.insert(droppedNames, string.format("%s(%s:%ds)", sp.name, src, total))
+        end
+    end
+    if #spells == 0 and #candidates > 0 then
+        spells = candidates
+        MobileUI_Debug("DynamicBar: duration filter kept 0 — falling back to candidates")
+    end
     MobileUI_Debug(string.format(
-        "DynamicBar: spell scan (bookname=%s bookinfo=%s) %d checked -> %d kept: %s",
+        "DynamicBar: spell scan (bookname=%s bookinfo=%s) %d checked -> %d candidates -> %d kept: %s",
         tostring(GetSpellBookItemName ~= nil), tostring(GetSpellBookItemInfo ~= nil),
-        checked, #spells, table.concat(keptNames, ", ")))
+        checked, #candidates, #spells, table.concat(keptNames, ", ")))
+    if #droppedNames > 0 then
+        MobileUI_Debug("DynamicBar: dropped: " .. table.concat(droppedNames, ", "))
+    end
     table.sort(spells, function(a, b)
         if a.buff ~= b.buff then return a.buff and not b.buff end
         return a.name < b.name
