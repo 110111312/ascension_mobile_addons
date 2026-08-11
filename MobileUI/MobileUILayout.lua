@@ -271,11 +271,14 @@ local function SaveOriginals()
     -- ChatFrame1: original position, so layout revert restores it exactly
     local cf = _G["ChatFrame1"]
     if cf then saved.chatFrame = { points = SavePoints(cf) } end
-    -- SpellBookFrame: original anchor points + scale + OnShow script, so
-    -- layout revert restores the stock position/size/behavior exactly.
-    local sb = _G["SpellBookFrame"]
+    -- Spell book: the Ascension client's real frame is
+    -- AscensionSpellbookFrame (stock SpellBookFrame is never shown on this
+    -- client). Save its anchor points + scale + OnShow script, so layout
+    -- revert restores the stock position/size/behavior exactly.
+    local sb = _G["AscensionSpellbookFrame"] or _G["SpellBookFrame"]
     if sb then
         saved.spellbook = {
+            name = sb:GetName(),
             points = SavePoints(sb),
             scale = sb:GetScale(),
             onShow = sb:GetScript("OnShow"),
@@ -1245,67 +1248,74 @@ local function RevertPartyFrames()
 end
 
 -- 5c. Spell Book → centered, scaled to fit the screen
--- Stock 3.3.5a SpellBookFrame is 600x700 anchored TOPLEFT of UIParent (this
--- Ascension client renders it bottom-left). Centered on the 1128x634
--- UIParent it would overflow ~33 units top and bottom (the top tab row would
--- clip), so it is also scaled to fit the screen height with a small margin.
--- The frame is a plain (non-secure) movable frame, so ClearAllPoints/SetPoint/
--- SetScale are safe out of combat. The OnShow hook re-asserts the position
--- when the book opens, in case the client re-anchors it on show; the original
--- OnShow (tab update + open sound) is preserved and called first. A one-shot
--- timer re-asserts again ~0.25s after show, covering clients that re-anchor
--- the book in the open function AFTER Show() returns (OnShow already ran).
+-- The Ascension client's spell book is AscensionSpellbookFrame (540x525),
+-- NOT the stock SpellBookFrame (384x512, never shown on this client). The
+-- client anchors it bottom-left, mostly off-screen (pos=(22,514) on a
+-- 1139x640 UIParent → bottom edge ~400 units below the screen). We center
+-- it and scale to fit the screen height (min(1, (screenH-40)/h) — never
+-- scales up). The frame is a plain (non-secure) movable frame, so
+-- ClearAllPoints/SetPoint/SetScale are safe.
+--
+-- Re-assert: a persistent timer re-centers the frame every frame while it
+-- is shown (the client re-anchors it when it opens), plus an OnShow
+-- fast-path that preserves the original OnShow (tab update + open sound).
 local spellBookTimer
+local SPELLBOOK_FRAME = "AscensionSpellbookFrame"
 local function CenterSpellBook(sb, scale)
     sb:SetScale(scale)
     sb:ClearAllPoints()
     sb:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 end
 local function ApplySpellBook()
-    local sb = _G["SpellBookFrame"]
+    local sb = _G[SPELLBOOK_FRAME] or _G["SpellBookFrame"]
     if not sb then
-        MobileUI_Debug("ApplySpellBook: SpellBookFrame NOT FOUND")
+        MobileUI_Debug("ApplySpellBook: " .. SPELLBOOK_FRAME .. " NOT FOUND")
         return
     end
     local h = sb:GetHeight()
-    if not h or h <= 0 then h = 700 end
-    local screenH = UIParent:GetHeight() or 634
+    if not h or h <= 0 then h = 525 end
+    local screenH = UIParent:GetHeight() or 640
     local scale = math.min(1, (screenH - 40) / h)
     CenterSpellBook(sb, scale)
+    MobileUI_Debug("ApplySpellBook: " .. (sb:GetName() or "?") .. " centered (scale=" .. scale .. ")")
+    -- Persistent re-assert timer: re-center every frame while shown (the
+    -- client re-anchors the book when it opens).
+    if not spellBookTimer then
+        spellBookTimer = CreateFrame("Frame")
+        spellBookTimer:SetScript("OnUpdate", function(self)
+            if not MobileDB or not MobileDB.layoutEnabled then
+                self:Hide()
+                return
+            end
+            local f = _G[SPELLBOOK_FRAME] or _G["SpellBookFrame"]
+            if f and f:IsShown() then
+                CenterSpellBook(f, self._scale or 1)
+            end
+        end)
+    end
+    spellBookTimer._scale = scale
+    spellBookTimer:Show()
+    -- OnShow fast-path: re-center in the same frame as show, preserving the
+    -- original OnShow (tab update + open sound).
     local orig = saved.spellbook and saved.spellbook.onShow
     sb:SetScript("OnShow", function(self)
         if orig then pcall(orig, self) end
         if MobileDB and MobileDB.layoutEnabled then
             CenterSpellBook(self, scale)
-            if not spellBookTimer then
-                spellBookTimer = CreateFrame("Frame")
-                spellBookTimer:SetScript("OnUpdate", function(self, el)
-                    self._t = (self._t or 0) + el
-                    if self._t >= 0.25 then
-                        self._t = 0
-                        if MobileDB and MobileDB.layoutEnabled then
-                            local f = _G["SpellBookFrame"]
-                            if f then CenterSpellBook(f, scale) end
-                        end
-                        self:Hide()
-                    end
-                end)
-            end
-            spellBookTimer._t = 0
-            spellBookTimer:Show()
         end
     end)
-    MobileUI_Debug("ApplySpellBook: SpellBookFrame centered (scale=" .. scale .. ")")
 end
 local function RevertSpellBook()
     if spellBookTimer then spellBookTimer:Hide() end
-    local sb = _G["SpellBookFrame"]
     local sv = saved.spellbook
-    if not sb or not sv then return end
-    sb:SetScale(sv.scale)
-    RestorePoints(sb, sv.points)
-    sb:SetScript("OnShow", sv.onShow)
-    MobileUI_Debug("RevertSpellBook: SpellBookFrame restored")
+    if not sv then return end
+    local sb = _G[sv.name or SPELLBOOK_FRAME]
+    if sb then
+        sb:SetScale(sv.scale)
+        RestorePoints(sb, sv.points)
+        sb:SetScript("OnShow", sv.onShow)
+    end
+    MobileUI_Debug("RevertSpellBook: " .. (sv.name or "?") .. " restored")
 end
 
 -- 6. Chat Frame: lift it so its "to newest" scroll button sits just above
