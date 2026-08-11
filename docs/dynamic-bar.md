@@ -82,17 +82,17 @@ adapts to the tallest column (cell height shrinks if a category is long):
   `"SPELL"`, so names containing `Mount` are classified as mounts).
 - **Professions** — the player's profession skills and sub-skills
   (e.g. **Enchanting** — clicking it opens the enchanting window — and
-  **Disenchant**). Detected by **filter, not whitelist**:
-  `GetProfessions()` + `GetProfessionInfo()` return each profession's exact
-  spellbook range (`spellOffset`..`spellOffset+numSpells-1`); the first spell
-  in the range is the profession skill, the rest are sub-skills. Recipes are
-  **not** in the spellbook (they live in the profession window), so the
-  range is small and clean. Profession spells **bypass the candidate
-  filters** (the skill may read as passive, and sub-skills carry
-  `Requires <prof> (rank)` which the stance filter would otherwise drop).
-  If `GetProfessions`/`GetProfessionInfo` are stripped on this client, a
-  fallback tags any non-General tab whose spells show a
-  `Requires <X> (rank)` tooltip line as a profession tab.
+  **Disenchant**). Detected by **filter, not whitelist**: `GetProfessions()`
+  is stripped on this client and profession spells live in the **General
+  tab** (not their own tab), so the names are **derived from the data**:
+  sub-skills/recipes carry a `Requires <Prof> (rank)` tooltip line (e.g.
+  Disenchant: `Requires Enchanting (1)`) which derives the profession name;
+  the profession skill itself has no such line, but its **name matches the
+  derived name**. Two passes: derive the names from every spell's tooltip
+  (cached by spellbookID), then tag spells whose name matches a derived
+  name or whose own tooltip has a rank line. Profession spells **bypass the
+  candidate filters** (the skill may read as passive, and sub-skills carry
+  the rank line which the stance filter would otherwise drop).
 
 **Filtering reality on this client:** `IsHelpfulSpell`, `IsHarmfulSpell`,
 `IsAttackSpell` and `IsPassiveSpell` all **exist and work**; `IsTradeSkill`
@@ -229,8 +229,7 @@ All `DynamicBar:` lines go to the `MobileUIDebugLog` ring buffer (view with
   assignment result + verification
 - `spell tabs: …` / `N candidates (X spells, Y mounts, Z profs)` / `kept: …` /
   `candidate-rejected: …` — spell scan summary
-- `profession <name> (rank r/m) offset=… num=…` — profession detection
-  (or `professions API stripped — tooltip tab fallback` + `profession tab …`)
+- `professions: <name>, …` — derived profession names (or `none`)
 - `stance-scan: <spell> requires '<x>' -> FILTER/keep` — stance heuristic
 - `tooltip ERROR: …` / `OpenPicker ERROR: …` — pcall-trapped failures
 
@@ -254,10 +253,10 @@ All `DynamicBar:` lines go to the `MobileUIDebugLog` ring buffer (view with
 7. **Strip size** — the `applied 6 button(s) size=…` log line shows whether
    the 64px target fit or shrank; adjust the window or `TARGET_SIZE` if the
    size looks off.
-8. **Profession detection** — the log shows `profession Enchanting (rank …)
-   offset=… num=…` (or the tooltip-tab fallback). The picker's Professions
-   column lists the skill + sub-skills; assigning the skill and tapping it
-   opens the profession window.
+8. **Profession detection** — the log shows `professions: Enchanting, …`
+   (derived from `Requires <Prof> (rank)` tooltip lines). The picker's
+   Professions column lists the skill + sub-skills; assigning the skill and
+   tapping it opens the profession window.
 
 The debug ring (`MobileUIDebugLog` SavedVariable, on disk after `/reload`
 or logout) is the source of truth — no chat prints.

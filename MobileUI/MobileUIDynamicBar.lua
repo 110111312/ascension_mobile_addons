@@ -224,19 +224,21 @@ local function SpellRequiresStance(spellbookID, sname)
     return requires
 end
 
--- Profession detection: GetProfessions() + GetProfessionInfo() return each
--- profession's exact spellbook range (spellOffset..spellOffset+numSpells-1).
--- The first spell in the range is the profession skill itself (e.g.
--- "Enchanting" — clicking it opens the profession window); the rest are
--- sub-skills (Disenchant). Recipes are NOT in the spellbook (they live in
--- the profession window), so the range is small and clean.
--- Fallback if these APIs are stripped (like IsTradeSkill): a non-General tab
--- whose spells carry a "Requires <X> (rank)" tooltip line is a profession
--- tab — all its spells are profession spells.
-local profRankCache = {}
-local function SpellHasProfessionRank(spellbookID)
-    if profRankCache[spellbookID] ~= nil then return profRankCache[spellbookID] end
-    local found = false
+-- Profession detection (filter, not whitelist): GetProfessions() is
+-- stripped on this client, and profession spells live in the General tab
+-- (not their own tab), so the names are DERIVED from the data instead:
+--   * sub-skills/recipes carry a "Requires <Prof> (rank)" tooltip line
+--     (e.g. Disenchant: "Requires Enchanting (1)") — that derives the
+--     profession name;
+--   * the profession skill itself (e.g. "Enchanting") has no such line,
+--     but its NAME matches the derived profession name.
+-- Two passes: first derive the profession names from every spell's tooltip,
+-- then tag spells whose name matches a derived name or whose own tooltip has
+-- a rank line. Cached by spellbookID (tooltip scans are the slow part).
+local profNameCache = {}
+local function SpellProfessionName(spellbookID)
+    if profNameCache[spellbookID] ~= nil then return profNameCache[spellbookID] end
+    local prof = nil
     if GameTooltip and GameTooltip.SetSpell then
         local ok = pcall(function()
             GameTooltip:SetOwner(UIParent, "ANCHOR_NONE")
@@ -244,8 +246,9 @@ local function SpellHasProfessionRank(spellbookID)
             for _, r in ipairs({ GameTooltip:GetRegions() }) do
                 if r and r.GetText and r:GetObjectType() == "FontString" then
                     local t = (r:GetText() or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("^%s+", "")
-                    if t:match("^Requires%s*:?%s+.+%(%d+%)") then
-                        found = true
+                    local req = t:match("^Requires%s*:?%s*(.+%(%d+%))%s*$")
+                    if req then
+                        prof = req:gsub("%s*%(%d+%)%s*$", ""):gsub("[%.%s]+$", "")
                         break
                     end
                 end
@@ -253,55 +256,11 @@ local function SpellHasProfessionRank(spellbookID)
         end)
         GameTooltip:Hide()
         if not ok then
-            MobileUI_Debug("DynamicBar: prof-rank scan ERROR: " .. tostring(err))
+            MobileUI_Debug("DynamicBar: prof-name scan ERROR: " .. tostring(err))
         end
     end
-    profRankCache[spellbookID] = found
-    return found
-end
-
-local function GetProfessionRanges()
-    local ranges = {}  -- [spellbookIndex] = professionName
-    local ok = false
-    if GetProfessions then
-        local p1, _, _, p2, _, _, arch = GetProfessions()
-        local seen = {}
-        for _, p in ipairs({ p1, p2, arch }) do
-            if p and not seen[p] then
-                seen[p] = true
-                local name, _, rank, maxRank, numSpells, offset =
-                    GetProfessionInfo and GetProfessionInfo(p)
-                if name and offset and numSpells then
-                    ok = true
-                    for i = offset + 1, offset + numSpells do
-                        ranges[i] = name
-                    end
-                    MobileUI_Debug(string.format(
-                        "DynamicBar: profession %s (rank %s/%s) offset=%s num=%s",
-                        name, tostring(rank), tostring(maxRank), offset, numSpells))
-                end
-            end
-        end
-    end
-    if not ok then
-        MobileUI_Debug("DynamicBar: professions API stripped — tooltip tab fallback")
-        local nt = GetNumSpellTabs() or 0
-        for tab = 2, nt do
-            local tname, _, offset, num = GetSpellTabInfo(tab)
-            if tname and offset and num then
-                local isProf = false
-                for i = offset + 1, offset + num do
-                    if SpellHasProfessionRank(i) then isProf = true break end
-                end
-                if isProf then
-                    for i = offset + 1, offset + num do ranges[i] = tname end
-                    MobileUI_Debug(string.format(
-                        "DynamicBar: profession tab %s (offset=%s num=%s)", tname, offset, num))
-                end
-            end
-        end
-    end
-    return ranges
+    profNameCache[spellbookID] = prof
+    return prof
 end
 
 local function BuildEntries()
@@ -343,11 +302,31 @@ local function BuildEntries()
         buffSet[name] = dur or 0
     end
     local rejected   = {}
-    local profRanges = GetProfessionRanges()
     local spellNameFn = GetSpellBookItemName or GetSpellName
+    -- Pass 1: derive profession names from every spell's "Requires <Prof>
+    -- (rank)" tooltip line (cached by spellbookID).
+    local profByID   = {}  -- [spellbookID] = professionName (from rank line)
+    local profNames  = {}  -- professionName -> professionName (derived)
+    local nt0 = GetNumSpellTabs() or 0
+    for tab = 1, nt0 do
+        local _, _, offset, num = GetSpellTabInfo(tab)
+        if offset and num then
+            for i = offset + 1, offset + num do
+                local pn = SpellProfessionName(i)
+                if pn then
+                    profByID[i] = pn
+                    profNames[pn] = pn
+                end
+            end
+        end
+    end
+    local profList = {}
+    for pn in pairs(profNames) do table.insert(profList, pn) end
+    table.sort(profList)
+    MobileUI_Debug("DynamicBar: professions: " .. (#profList > 0 and table.concat(profList, ", ") or "none"))
     -- Scan ALL tabs: on Ascension the buffs live on custom tabs
     -- (Engravement / Glyphic / Riftblade), not just General. Profession
-    -- spells are tagged via GetProfessionRanges() and bypass the filters.
+    -- spells are tagged via the derived names above and bypass the filters.
     local nt = GetNumSpellTabs() or 0
     local tabNames = {}
     for tab = 1, nt do
@@ -371,7 +350,7 @@ local function BuildEntries()
                 end
             end
             if sname then
-                local profName = profRanges[i]
+                local profName = profByID[i] or profNames[sname]
                 local keep    = true
                 local why     = nil
                 local kind    = nil
