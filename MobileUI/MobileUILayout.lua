@@ -157,6 +157,11 @@ local function UnskinButton(btn)
     if lbfMenuBar then lbfMenuBar:RemoveButton(btn) end
 end
 
+-- Exposed for the dynamic bar module so the strip buttons get the same
+-- circular skin as the arc.
+MobileUILayout.SkinButton   = SkinButton
+MobileUILayout.UnskinButton = UnskinButton
+
 -- Save Originals (once)
 local function SaveOriginals()
     if saved.init then return end

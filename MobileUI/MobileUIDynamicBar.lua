@@ -2,11 +2,11 @@
 --
 -- Dynamic Action Bar (bottom-left strip)
 --
--- Reuses the parked MultiBarBottomLeft tail buttons 6-10 (action slots 66-70)
+-- Reuses the parked MultiBarBottomLeft tail buttons 6-11 (action slots 66-71)
 -- as a mobile "totem-style" bar in the empty strip between the bag button and
 -- the player health/mana frame. The strip geometry is MEASURED at apply time
--- (bag right edge -> player frame left edge), so the button count adapts to
--- the actual empty space (up to 5, min 3, shrinking the buttons if needed).
+-- (bag right edge -> player frame left edge): 6 buttons spread evenly across
+-- the gap, targeting the layer-3 arc size (64px) and shrinking to fit.
 --
 --   Tap  (left click)  -> use: the button is a REAL stock action button, so
 --                         the tap runs the stock ActionButton_OnClick ->
@@ -15,17 +15,17 @@
 --                         arc spell cast uses). The client renders icon /
 --                         cooldown / stack count natively — no display code.
 --   Hold (right click) -> assign: an OnMouseDown script installed on the
---                         stock button (same way the layout installs OnEnter
---                         on the arc buttons) opens the picker on right-down:
---                         usable bag items (GetItemSpell ~= nil) + long buffs
---                         (whitelisted Ascension buffs + anything currently
---                         active on the player, sorted first). Tapping an
---                         entry assigns it to the button's action slot via
---                         PickupContainerItem/PickupSpell + PlaceAction — not
---                         on the taint-protected use path. The stock
---                         right-click pickup on release puts the slot's item
---                         on the cursor; ClosePicker / AssignEntry re-place it
---                         (PlaceAction) so nothing is lost.
+--                         stock button opens the picker on right-down. The
+--                         picker is a scrollable list grouped by category
+--                         (Items / Spells / Mounts): tap a row to assign it
+--                         to the button's action slot via PickupContainerItem
+--                         / PickupSpell + PlaceAction (not on the taint-
+--                         protected use path); hold a row to preview its
+--                         tooltip. Close via the X button, ESC, or a tap
+--                         outside. The stock right-click pickup on release
+--                         puts the slot's item on the cursor; the menu's
+--                         OnHide re-places it (PlaceAction) so nothing is
+--                         lost.
 --
 -- Why no catcher overlay: a Button with RegisterForClicks(right-only) got
 -- NO mouse events on this client (verified in-game via the debug ring), and
@@ -33,42 +33,36 @@
 -- direct OnMouseDown script is the minimal proven mechanic — the layout
 -- already installs scripts on the arc buttons and casting stays clean.
 --
--- Assignments live in the client's action-bar save data (slots 66-70), so
+-- Assignments live in the client's action-bar save data (slots 66-71), so
 -- they persist across reload/logout for free. Revert re-parks the tail
 -- buttons exactly as the layout left them (off-screen) but leaves the slot
 -- contents in place (they are the player's own action slots).
 --
--- In-game verification notes (first session):
+-- In-game verification notes:
 --   1. The OnMouseDown script on the stock button does not taint the
 --      left-click use path (no 'UseAction()' taint error on tap).
 --   2. PickupContainerItem -> PlaceAction assigns cleanly on this client.
 --   3. PickupSpellBookItem vs PickupSpell — both are tried; log which exists.
---   4. The right-up stock pickup is re-placed by ClosePicker (no cursor
+--   4. The right-up stock pickup is re-placed by the menu OnHide (no cursor
 --      item left dangling when the picker is dismissed).
+--   5. LBF circular skin on the strip buttons keeps the native icon/cooldown
+--      display working (stock OnEvent kept) with no combat taint errors.
 
-local FIRST_BTN = 6      -- MultiBarBottomLeftButton6..10
-local MAX_BTN   = 5      -- up to 5 buttons (6-10)
+local FIRST_BTN = 6      -- MultiBarBottomLeftButton6..11
+local MAX_BTN   = 6      -- 6 buttons (6-11)
+local TARGET_SIZE = 64    -- layer-3 arc size; shrinks to fit the gap
 local function SlotForButton(i) return 60 + i end -- Ascension: bar2 attached => slots 61-72
 
 local PITCH_GAP      = 4
 local STRIP_MARGIN   = 8   -- gap after the bag button
 local STRIP_END_MARG = 8   -- gap before the player frame
 
-local COLS, ROWS, CELL = 4, 3, 52
-local PER_PAGE = COLS * ROWS
-
--- Long buffs that MUST always appear in the picker, even though their
--- tooltips omit the duration line (Ascension custom spells — verified
--- in-game: Etching of the Leylines is a 30-min buff with no tooltip
--- duration). Add any other long buffs here.
-local ALWAYS_BUFF = {
-    ["Etching of the Leylines"] = true,
-    ["Runic Tattoos: Earth"]    = true,
-    ["Palm Sigil: Earth"]       = true,
-    ["Palm Sigil: Fire"]        = true,
-    ["Runeshroud"]              = true,
-    ["Weapon Engraving: Fire"]  = true,
-    ["Weapon Engraving: Ice"]   = true,
+local MENU_W, MENU_H = 340, 460
+local ROW_H, HEADER_H, ICON = 34, 22, 26
+local GROUP_NAMES = {
+    item  = "Items",
+    spell = "Spells",
+    mount = "Mounts",
 }
 
 MobileUIDynamicBar = {}
@@ -77,11 +71,12 @@ local usedButtons = {}   -- [btnIndex] = true while the strip is active
 local active     = false
 local pendingDefer = nil
 
-local menu, clickCatcher, menuTitle, menuHint
-local menuCells, prevBtn, nextBtn, pageLabel
-local pickerButton, entries, curPage, pages
--- Forward refs: assigned below; referenced by the menu cells' OnClick and by
--- ClosePicker (which runs before they are defined).
+local menu, clickCatcher, menuTitle, menuHint, closeBtn
+local scroll, content, scrollBar
+local rowPool, headerPool = {}, {}
+local pickerButton, entries
+-- Forward refs: assigned below; referenced by the menu rows' OnClick and by
+-- the menu OnHide (which runs before they are defined).
 local AssignEntry, ReturnCursorContent
 
 -- ============================================================================
@@ -104,7 +99,8 @@ end
 
 -- ============================================================================
 -- Strip geometry — measured from the live frames so it adapts to whatever
--- resolution/scale the phone stream uses
+-- resolution/scale the phone stream uses. 6 buttons spread evenly across the
+-- gap, targeting the layer-3 arc size (64px) and shrinking to fit.
 -- ============================================================================
 local function ComputeStrip()
     local bag = _G["MobileUIBagButton"]
@@ -115,38 +111,35 @@ local function ComputeStrip()
         -- Fallback: player frame is BOTTOM-centered, 280 wide, UI scaled 1.2
         playerLeft = GetScreenWidth() / 2.4 - 140
     end
-    local gap = playerLeft - bagRight - STRIP_MARGIN - STRIP_END_MARG
-    local btn = _G["MultiBarBottomLeftButton" .. FIRST_BTN]
-    local base = btn and btn:GetWidth() or 36
-    local size, pitch = base, base + PITCH_GAP
-    local count = 0
-    for n = MAX_BTN, 3, -1 do
-        if gap >= n * pitch - PITCH_GAP then count = n break end
-    end
-    if count == 0 then
-        -- Not enough room even for 3 at stock size: shrink to fit 3.
-        count = 3
-        size  = math.max(24, math.floor((gap - (count - 1) * PITCH_GAP) / count))
+    local span = playerLeft - bagRight - STRIP_MARGIN - STRIP_END_MARG
+    local size = TARGET_SIZE
+    local pitch
+    if span >= MAX_BTN * TARGET_SIZE + (MAX_BTN - 1) * PITCH_GAP then
+        -- Full 64px: spread the leftover space evenly between the buttons.
+        pitch = (span - MAX_BTN * TARGET_SIZE) / (MAX_BTN - 1) + TARGET_SIZE
+    else
+        -- Not enough room for 6 at 64px: shrink to fit with min gaps.
+        size  = math.max(24, math.floor((span - (MAX_BTN - 1) * PITCH_GAP) / MAX_BTN))
         pitch = size + PITCH_GAP
     end
-    if gap < size then count = math.max(1, math.floor((gap + PITCH_GAP) / (size + PITCH_GAP))) end
-    local y = bag and bag:GetBottom() or 10
-    return count, size, pitch, bagRight + STRIP_MARGIN, y
+    -- Vertically center the strip on the bag button.
+    local y = bag and (bag:GetBottom() + (bag:GetHeight() - size) / 2) or 10
+    return MAX_BTN, size, pitch, bagRight + STRIP_MARGIN, y
 end
 
 -- ============================================================================
 -- Picker menu
 -- ============================================================================
+-- No keep/drop filter: every candidate (helpful, non-passive, non-attack
+-- spell; mounts split out via the book type) shows, grouped by category.
 -- Buff durations: 3.3.5 has no spell-duration API, and the tooltip
 -- line-reading API (GetNumTooltipLines) does NOT exist on this Ascension
 -- client (verified in-game on both the global and addon-created tooltips), so
--- duration can't be read at all. The picker instead keeps: whitelisted long
--- buffs (ALWAYS_BUFF — Ascension custom buffs, always shown) plus anything
--- currently active on the player (a discovery net for buffs not yet
--- whitelisted).
+-- duration can't be read at all. The picker shows remaining time only for
+-- buffs currently active on the player (UnitBuff gives the exact duration).
 
 local function BuildEntries()
-    local out = {}
+    local items, spells, mounts = {}, {}, {}
     -- --- Usable bag items (any item with a "Use:" effect), deduped by id ---
     local seen = {}
     for c = 0, 4 do
@@ -161,7 +154,7 @@ local function BuildEntries()
                         local name  = GetItemInfo(link)
                         local icon  = GetItemIcon(link)
                         local count = GetItemCount(link)
-                        table.insert(out, {
+                        table.insert(items, {
                             kind = "item", id = id, c = c, s = s,
                             name = name or link, icon = icon, count = count,
                         })
@@ -170,14 +163,10 @@ local function BuildEntries()
             end
         end
     end
-    -- --- Buff spells: long friendly buffs (>= 10 min) or active buffs --------
+    -- --- Spells + mounts ---------------------------------------------------
     -- Candidates: helpful (usable on player/friendly) minus attack spells
-    -- minus passives. Then a duration filter: keep spells whose tooltip says
-    -- "Duration: X min" with X >= 10, plus spells currently active on the
-    -- player that show no tooltip duration (custom buffs that are up).
-    -- Everything else (mounts, racials, toggles, resurrections, teleports,
-    -- heals, short buffs) is dropped. Safety: if the duration filter keeps
-    -- nothing, fall back to the candidate list so the picker never goes empty.
+    -- minus passives. Mounts are split out via GetSpellBookItemInfo's book
+    -- type ("MOUNT" vs "SPELL").
     local buffSet = {}
     for i = 1, 40 do
         -- UnitBuff: name, rank, icon, count, dispelType, DURATION, ...
@@ -186,7 +175,6 @@ local function BuildEntries()
         if not name then break end
         buffSet[name] = dur or 0
     end
-    local candidates = {}
     local rejected   = {}
     local spellNameFn = GetSpellBookItemName or GetSpellName
     local nt = GetNumSpellTabs() or 0
@@ -216,12 +204,17 @@ local function BuildEntries()
                     -- Restrict to friendly-target spells only when the API exists.
                     if helpful == false then keep, why = false, "nothelpful" end
                     if keep then
-                        table.insert(candidates, {
-                            kind = "spell", spellbookID = i, name = sname,
+                        local btype = GetSpellBookItemInfo and select(1, GetSpellBookItemInfo(i, "spell"))
+                        local kind = (btype == "MOUNT") and "mount" or "spell"
+                        local entry = {
+                            kind = kind, spellbookID = i, name = sname,
                             icon = GetSpellTexture and GetSpellTexture(i, "spell"),
-                            buff = buffSet[sname] ~= nil,
                             dur  = buffSet[sname] or 0,
-                        })
+                        }
+                        -- Global spellID for the tooltip (GetSpellInfo accepts
+                        -- the book form on 3.3.5).
+                        entry.spellID = select(7, GetSpellInfo(i, "spell"))
+                        table.insert(kind == "mount" and mounts or spells, entry)
                     else
                         table.insert(rejected, string.format("%s(%s)", sname, why))
                     end
@@ -229,92 +222,56 @@ local function BuildEntries()
             end
         end
     end
-    local spells, keptNames, droppedNames = {}, {}, {}
-    for _, sp in ipairs(candidates) do
-        -- Keep whitelisted long buffs (Ascension tooltips omit the duration
-        -- line, so the tooltip can't be trusted here) and anything currently
-        -- active on the player (a discovery net for buffs not yet whitelisted).
-        local long = ALWAYS_BUFF[sp.name] or sp.buff
-        if long then
-            table.insert(spells, sp)
-            table.insert(keptNames, sp.name)
-        else
-            table.insert(droppedNames, sp.name)
-        end
-    end
-    if #spells == 0 and #candidates > 0 then
-        spells = candidates
-        MobileUI_Debug("DynamicBar: filter kept 0 — falling back to candidates")
-    end
+    table.sort(spells, function(a, b) return a.name < b.name end)
+    table.sort(mounts, function(a, b) return a.name < b.name end)
     MobileUI_Debug(string.format(
-        "DynamicBar: spell scan (bookname=%s bookinfo=%s) %d checked -> %d candidates -> %d kept: %s",
+        "DynamicBar: spell scan (bookname=%s bookinfo=%s) %d checked -> %d candidates (%d spells, %d mounts)",
         tostring(GetSpellBookItemName ~= nil), tostring(GetSpellBookItemInfo ~= nil),
-        checked, #candidates, #spells, table.concat(keptNames, ", ")))
+        checked, #spells + #mounts, #spells, #mounts))
     if #rejected > 0 then
         MobileUI_Debug("DynamicBar: candidate-rejected: " .. table.concat(rejected, ", "))
-    end    if #droppedNames > 0 then
-        MobileUI_Debug("DynamicBar: dropped: " .. table.concat(droppedNames, ", "))
     end
-    table.sort(spells, function(a, b)
-        if a.buff ~= b.buff then return a.buff and not b.buff end
-        return a.name < b.name
-    end)
-    for _, sp in ipairs(spells) do table.insert(out, sp) end
+    local out = {}
+    for _, t in ipairs({ items, spells, mounts }) do
+        for _, e in ipairs(t) do table.insert(out, e) end
+    end
     return out
 end
 
-local function RenderPage()
-    if #entries == 0 then
-        for k = 1, PER_PAGE do menuCells[k]:Hide() end
-        pageLabel:SetText("")
-        prevBtn:Hide()
-        nextBtn:Hide()
-        return
-    end
-    local start = (curPage - 1) * PER_PAGE
-    for k = 1, PER_PAGE do
-        local cell = menuCells[k]
-        local entry = entries[start + k]
-        if entry then
-            cell.entry = entry
-            cell.icon:SetTexture(entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
-            cell.icon:Show()
-            local txt = ""
-            if entry.kind == "item" then
-                if entry.count and entry.count > 1 then txt = tostring(entry.count) end
-            elseif entry.kind == "spell" and tonumber(entry.dur) and entry.dur > 0 then
-                txt = string.format("%dm", math.ceil(entry.dur / 60))
+-- Tooltip preview: hold (right button) on a row shows the entry's tooltip;
+-- release hides it. Also fires on hover for desktop. Uses the global
+-- GameTooltip (the addon-created one lacks template methods on this client).
+local function ShowEntryTooltip(entry)
+    if not entry then return end
+    local ok, err = pcall(function()
+        GameTooltip:SetOwner(menu, "ANCHOR_RIGHT")
+        if entry.kind == "item" then
+            if entry.c and entry.s then
+                GameTooltip:SetBagItem(entry.c, entry.s)
+            else
+                GameTooltip:SetItemByID(entry.id)
             end
-            cell.count:SetText(txt)
-            cell.name:SetText(entry.name or "")
-            cell:Show()
-        else
-            cell.entry = nil
-            cell:Hide()
+        elseif entry.spellID then
+            GameTooltip:SetSpellByID(entry.spellID)
         end
+        GameTooltip:Show()
+    end)
+    if not ok then
+        MobileUI_Debug("DynamicBar: tooltip ERROR: " .. tostring(err))
     end
-    pageLabel:SetText(curPage .. "/" .. pages)
-    prevBtn:SetShown(curPage > 1)
-    nextBtn:SetShown(curPage < pages)
+end
+
+local function HideEntryTooltip()
+    if GameTooltip then GameTooltip:Hide() end
 end
 
 local function ClosePicker()
-    -- The hold's right-UP fires the stock ActionButton_OnClick, which does
-    -- PickupAction on the slot — so the slot's item can be sitting on the
-    -- cursor when the picker closes without an assignment. Put it back.
-    if pickerButton and GetCursorInfo() then
-        local slot = SlotForButton(pickerButton)
-        if PlaceAction then PlaceAction(slot) end
-        if GetCursorInfo() then ReturnCursorContent() end -- place failed
-    end
     if menu then menu:Hide() end
-    if clickCatcher then clickCatcher:Hide() end
-    pickerButton = nil
 end
 
 local function CreateMenu()
     menu = CreateFrame("Frame", "MobileUIDynamicBarMenu", UIParent)
-    menu:SetSize(COLS * CELL + (COLS - 1) * PITCH_GAP + 28, 258)
+    menu:SetSize(MENU_W, MENU_H)
     menu:SetFrameStrata("DIALOG")
     menu:SetClampedToScreen(true)
     menu:SetBackdrop({
@@ -323,60 +280,68 @@ local function CreateMenu()
         tile = true, tileSize = 32, edgeSize = 32,
         insets = { left = 11, right = 12, top = 12, bottom = 11 },
     })
+    menu:EnableKeyboard(true)
+    menu:SetScript("OnKeyDown", function(self, key)
+        if key == "ESCAPE" then ClosePicker() end
+    end)
+    -- ESC also hides it via the stock UISpecialFrames path.
+    table.insert(UISpecialFrames, "MobileUIDynamicBarMenu")
+    -- All dismissal paths (X, ESC, tap-outside, assign, revert) end in
+    -- menu:Hide(); the cursor cleanup lives here so nothing is lost.
+    menu:SetScript("OnHide", function()
+        if pickerButton and GetCursorInfo() then
+            local slot = SlotForButton(pickerButton)
+            if PlaceAction then PlaceAction(slot) end
+            if GetCursorInfo() then ReturnCursorContent() end -- place failed
+        end
+        pickerButton = nil
+        if clickCatcher then clickCatcher:Hide() end
+    end)
     menu:Hide()
 
     menuTitle = menu:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     menuTitle:SetPoint("TOPLEFT", menu, "TOPLEFT", 14, -10)
-    menuTitle:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -14, -10)
+    menuTitle:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -34, -10)
 
     menuHint = menu:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     menuHint:SetPoint("TOPLEFT", menu, "TOPLEFT", 14, -26)
-    menuHint:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -14, -26)
+    menuHint:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -34, -26)
     menuHint:SetTextColor(0.6, 0.6, 0.6)
 
-    menuCells = {}
-    for k = 1, PER_PAGE do
-        local cell = CreateFrame("Button", nil, menu)
-        cell:SetSize(CELL, CELL)
-        cell.icon = cell:CreateTexture(nil, "BACKGROUND")
-        cell.icon:SetAllPoints()
-        cell.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        cell.count = cell:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        cell.count:SetPoint("BOTTOMRIGHT", cell, "BOTTOMRIGHT", -2, 2)
-        cell.name = cell:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        cell.name:SetPoint("BOTTOM", cell, "BOTTOM", 0, 2)
-        cell.name:SetWidth(CELL - 4)
-        cell.name:SetJustifyH("CENTER")
-        cell:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
-        cell:SetScript("OnClick", function(self)
-            if self.entry then AssignEntry(self.entry) end
-        end)
-        local col = (k - 1) % COLS
-        local row = math.floor((k - 1) / COLS)
-        cell:SetPoint("TOPLEFT", menu, "TOPLEFT", 14 + col * (CELL + PITCH_GAP), -40 - row * (CELL + PITCH_GAP))
-        menuCells[k] = cell
-    end
+    closeBtn = CreateFrame("Button", nil, menu)
+    closeBtn:SetSize(24, 24)
+    closeBtn:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -8, -8)
+    closeBtn:SetNormalFontObject(GameFontNormal)
+    closeBtn:SetText("X")
+    closeBtn:SetScript("OnClick", ClosePicker)
 
-    prevBtn = CreateFrame("Button", nil, menu)
-    prevBtn:SetSize(40, 20)
-    prevBtn:SetNormalFontObject(GameFontNormalSmall)
-    prevBtn:SetText("<")
-    prevBtn:SetScript("OnClick", function()
-        if curPage > 1 then curPage = curPage - 1 RenderPage() end
+    scroll = CreateFrame("ScrollFrame", nil, menu)
+    scroll:SetPoint("TOPLEFT", menu, "TOPLEFT", 14, -44)
+    scroll:SetPoint("BOTTOMRIGHT", menu, "BOTTOMRIGHT", -30, 12)
+    content = CreateFrame("Frame", nil, scroll)
+    content:SetWidth(MENU_W - 14 - 30)
+    scroll:SetScrollChild(content)
+
+    scrollBar = CreateFrame("Slider", nil, menu, "UIPanelScrollBarTemplate")
+    scrollBar:SetPoint("TOPRIGHT", scroll, "TOPRIGHT", 4, 0)
+    scrollBar:SetPoint("BOTTOMRIGHT", scroll, "BOTTOMRIGHT", 4, 0)
+    scrollBar:SetMinMaxValues(0, 1)
+    scrollBar:SetValue(0)
+    scrollBar:SetValueStep(1)
+    scrollBar:SetObeyStepOnDrag(true)
+    scrollBar:SetScript("OnValueChanged", function(self, value)
+        scroll:SetVerticalScroll(value)
     end)
-    prevBtn:SetPoint("BOTTOMLEFT", menu, "BOTTOMLEFT", 14, 12)
-
-    nextBtn = CreateFrame("Button", nil, menu)
-    nextBtn:SetSize(40, 20)
-    nextBtn:SetNormalFontObject(GameFontNormalSmall)
-    nextBtn:SetText(">")
-    nextBtn:SetScript("OnClick", function()
-        if curPage < pages then curPage = curPage + 1 RenderPage() end
+    scroll:SetScript("OnVerticalScroll", function(self, offset)
+        scrollBar:SetValue(offset)
     end)
-    nextBtn:SetPoint("BOTTOMRIGHT", menu, "BOTTOMRIGHT", -14, 12)
-
-    pageLabel = menu:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    pageLabel:SetPoint("BOTTOM", menu, "BOTTOM", 0, 14)
+    scroll:EnableMouseWheel(true)
+    scroll:SetScript("OnMouseWheel", function(self, delta)
+        local _, max = scrollBar:GetMinMaxValues()
+        local v = scrollBar:GetValue() - delta * 30
+        if v < 0 then v = 0 elseif v > max then v = max end
+        scrollBar:SetValue(v)
+    end)
 
     -- Full-screen catcher below the menu: a tap anywhere outside dismisses
     -- (same pattern as the bag-swap menu).
@@ -386,24 +351,113 @@ local function CreateMenu()
     clickCatcher:SetScript("OnMouseDown", ClosePicker)
 end
 
+-- Rebuild the scrollable grouped list. Rows/headers are pooled so repeated
+-- opens don't churn frame creation.
+local function RebuildList()
+    local usedRows, usedHeaders = 0, 0
+    local function GetRow()
+        usedRows = usedRows + 1
+        local r = rowPool[usedRows]
+        if not r then
+            r = CreateFrame("Button", nil, content)
+            r:SetHeight(ROW_H)
+            r.icon = r:CreateTexture(nil, "BACKGROUND")
+            r.icon:SetSize(ICON, ICON)
+            r.icon:SetPoint("LEFT", r, "LEFT", 6, 0)
+            r.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            r.name = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            r.name:SetPoint("LEFT", r.icon, "RIGHT", 6, 0)
+            r.name:SetPoint("RIGHT", r, "RIGHT", -30, 0)
+            r.name:SetJustifyH("LEFT")
+            r.count = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            r.count:SetPoint("RIGHT", r, "RIGHT", -6, 0)
+            r:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+            r:SetScript("OnClick", function(self)
+                if self.entry then AssignEntry(self.entry) end
+            end)
+            r:SetScript("OnMouseDown", function(self, button)
+                if button == "RightButton" and self.entry then ShowEntryTooltip(self.entry) end
+            end)
+            r:SetScript("OnMouseUp", function(self, button)
+                if button == "RightButton" then HideEntryTooltip() end
+            end)
+            r:SetScript("OnEnter", function(self)
+                if self.entry then ShowEntryTooltip(self.entry) end
+            end)
+            r:SetScript("OnLeave", HideEntryTooltip)
+            rowPool[usedRows] = r
+        end
+        r:Show()
+        return r
+    end
+    local function GetHeader(text)
+        usedHeaders = usedHeaders + 1
+        local h = headerPool[usedHeaders]
+        if not h then
+            h = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            h:SetTextColor(1, 0.82, 0)
+            headerPool[usedHeaders] = h
+        end
+        h:SetText(text)
+        h:Show()
+        return h
+    end
+    for k = usedRows + 1, #rowPool do rowPool[k]:Hide() end
+    for k = usedHeaders + 1, #headerPool do headerPool[k]:Hide() end
+
+    local y = 0
+    local lastKind = nil
+    for _, entry in ipairs(entries) do
+        if entry.kind ~= lastKind then
+            lastKind = entry.kind
+            local h = GetHeader(GROUP_NAMES[entry.kind] or entry.kind)
+            h:ClearAllPoints()
+            h:SetPoint("TOPLEFT", content, "TOPLEFT", 4, -y)
+            h:SetPoint("TOPRIGHT", content, "TOPRIGHT", -4, -y)
+            y = y + HEADER_H
+        end
+        local r = GetRow()
+        r:ClearAllPoints()
+        r:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -y)
+        r:SetWidth(content:GetWidth())
+        r.entry = entry
+        r.icon:SetTexture(entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+        r.icon:Show()
+        r.name:SetText(entry.name or "")
+        local txt = ""
+        if entry.kind == "item" then
+            if entry.count and entry.count > 1 then txt = tostring(entry.count) end
+        elseif tonumber(entry.dur) and entry.dur > 0 then
+            txt = string.format("%dm", math.ceil(entry.dur / 60))
+        end
+        r.count:SetText(txt)
+        y = y + ROW_H
+    end
+    content:SetHeight(y)
+    local viewH = (menu:GetHeight() or MENU_H) - 44 - 12
+    local maxScroll = math.max(0, y - viewH)
+    scrollBar:SetMinMaxValues(0, maxScroll)
+    scrollBar:SetValue(0)
+    scroll:SetVerticalScroll(0)
+end
+
 local function OpenPicker(btnIndex)
     if not active then return end
     pickerButton = btnIndex
     if not menu then CreateMenu() end
     entries = BuildEntries()
-    curPage = 1
-    pages = math.max(1, math.ceil(#entries / PER_PAGE))
-    MobileUI_Debug(string.format("DynamicBar: picker opened btn=%d entries=%d pages=%d",
-        btnIndex, #entries, pages))
+    MobileUI_Debug(string.format("DynamicBar: picker opened btn=%d entries=%d",
+        btnIndex, #entries))
     menuTitle:SetText("Assign to button " .. (btnIndex - FIRST_BTN + 1))
     if InCombatLockdown() then
         menuHint:SetText("Assigning is disabled in combat.")
     elseif #entries == 0 then
         menuHint:SetText("No usable items or buff spells found.")
     else
-        menuHint:SetText("Tap an item or buff to assign it to this button.")
+        menuHint:SetText("Tap to assign, hold for tooltip.")
     end
-    RenderPage()
+    menu:SetSize(MENU_W, math.min(MENU_H, math.max(200, UIParent:GetHeight() - 30)))
+    RebuildList()
     local btn = _G["MultiBarBottomLeftButton" .. btnIndex]
     local left, bottom, height = btn and btn:GetLeft(), btn and btn:GetBottom(), btn and btn:GetHeight()
     menu:ClearAllPoints()
@@ -496,11 +550,20 @@ local function ShowButton(i, size, x0, y, pitch)
     if hk then hk:Hide() end
     local nm = _G["MultiBarBottomLeftButton" .. i .. "Name"]
     if nm then nm:Hide() end
+    -- Circular skin, same as the arc (layer-3 look).
+    if MobileUILayout and MobileUILayout.SkinButton then
+        MobileUILayout.SkinButton(b, {
+            Icon     = _G["MultiBarBottomLeftButton" .. i .. "Icon"],
+            Cooldown = _G["MultiBarBottomLeftButton" .. i .. "Cooldown"],
+            Count    = _G["MultiBarBottomLeftButton" .. i .. "Count"],
+            Flash    = _G["MultiBarBottomLeftButton" .. i .. "Flash"],
+        })
+    end
     -- Hold detection: right-down opens the picker (works for empty and
     -- filled slots). The left path is untouched — the stock OnClick still
     -- fires UseAction on left-up with no addon on the stack. The stock
-    -- right-click pickup on release lands on the cursor; ClosePicker and
-    -- AssignEntry re-place it.
+    -- right-click pickup on release lands on the cursor; the menu OnHide
+    -- re-places it.
     b:SetScript("OnMouseDown", function(self, button)
         if button == "RightButton" then
             MobileUI_Debug(string.format("DynamicBar: btn %s hold", tostring(self:GetName())))
@@ -566,6 +629,9 @@ function MobileUIDynamicBar:Revert()
         local b = _G["MultiBarBottomLeftButton" .. i]
         if b then
             b:SetScript("OnMouseDown", nil)
+            if MobileUILayout and MobileUILayout.UnskinButton then
+                MobileUILayout.UnskinButton(b)
+            end
             -- Re-park exactly like the layout leaves the rest of the tail
             -- (off-screen; the client's combat re-show renders it invisible).
             b:ClearAllPoints()

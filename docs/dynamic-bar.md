@@ -16,8 +16,8 @@ button** — the button resolves its slot and the client's own
 `ActionButton_OnClick` → `UseAction(slot)` runs with zero addon code on the
 stack.
 
-So the bar assigns the chosen item/spell to a **real action slot** (66–70,
-via the parked `MultiBarBottomLeftButton6–10`) using the drag-simulation
+So the bar assigns the chosen item/spell to a **real action slot** (66–71,
+via the parked `MultiBarBottomLeftButton6–11`) using the drag-simulation
 APIs (`PickupContainerItem`/`PickupSpell` + `PlaceAction` — none on the
 protected list), and the tap is a plain stock action-button click. No
 secure-button experiments, no OnEvent clearing, no attribute games: the
@@ -26,15 +26,20 @@ client renders icon / cooldown / stack count / usable tint natively.
 ## Layout
 
 - The strip is **measured at apply time** (`MobileUIBagButton` right edge →
-  `PlayerFrame` left edge), so the button count adapts to the actual empty
-  space: 5 buttons when it fits, then 4, then 3 (shrinking button size if
-  needed). Anchored at the bag button's bottom, 8px after it.
-- Buttons 6–10 stay **children of `MultiBarBottomLeft`** (never reparented —
-  slot resolution comes from the attached bar → slots 66–70, the same
+  `PlayerFrame` left edge): **6 buttons spread evenly** across the whole gap,
+  targeting the **layer-3 arc size (64px)** and **shrinking to fit** when the
+  gap is too small (min 24px). The measured size is logged
+  (`applied 6 button(s) size=…`).
+- Buttons are **vertically centered on the bag button**.
+- Buttons 6–11 stay **children of `MultiBarBottomLeft`** (never reparented —
+  slot resolution comes from the attached bar → slots 66–71, the same
   discipline as the scatter arc). `showgrid=1` keeps empty slots visible.
+- The strip buttons get the **same circular skin as the arc** (embedded
+  LibButtonFacade, `MobileUI-Circle` group) via `MobileUILayout.SkinButton`
+  (exposed for this module).
 - The layout guard's per-frame `HideBar2Tail` **skips** buttons owned by the
   dynamic bar (`MobileUIDynamicBar.TailUsed(i)`), so the strip stays visible
-  through the combat re-show; the rest of the tail (11–12) stays parked
+  through the combat re-show; the rest of the tail (12) stays parked
   off-screen as before.
 
 ## Gestures
@@ -43,39 +48,45 @@ client renders icon / cooldown / stack count / usable tint natively.
 |---|---|
 | **Tap** (left click) | Stock action-button click → `UseAction(slot)` — uses the item / casts the spell. Taint-clean. |
 | **Hold** (right click) | An `OnMouseDown` script on the stock button (installed the same way the layout installs `OnEnter` on the arc buttons) opens the picker on right-**down** — works for empty and filled slots. |
-| **Tap an entry** | Assigns it to the held button's slot via pickup+`PlaceAction`, closes the picker. Gated out of combat. |
-| **Tap outside** | Dismisses the picker (full-screen catcher, same pattern as the bag-swap menu). |
+| **Tap a row** | Assigns it to the held button's slot via pickup+`PlaceAction`, closes the picker. Gated out of combat. |
+| **Hold a row** | Shows the entry's tooltip (global `GameTooltip`, pcall-wrapped); hides on release. Also on hover for desktop. |
+| **X button / ESC / tap outside** | Dismisses the picker. |
 
-The stock right-click **up** still fires `ActionButton_OnClick` → `PickupAction(slot)`, which puts the slot's item on the cursor. `ClosePicker` (on dismiss) and `AssignEntry` (before assigning) re-place it via `PlaceAction`, so nothing is lost or left dangling on the cursor.
+The stock right-click **up** still fires `ActionButton_OnClick` → `PickupAction(slot)`, which puts the slot's item on the cursor. The menu's **`OnHide`** re-places it via `PlaceAction` (fallback `ReturnCursorContent`), so nothing is lost or left dangling on the cursor — every dismissal path (X, ESC, tap-outside, assign, revert) ends in `menu:Hide()`.
 
 ### Why no overlay/catcher over the buttons
 
 A `Button` with `RegisterForClicks("RightButtonDown", ...)` received **no mouse events at all** on this client (verified in-game via the debug ring: no `catcher down` line while the strip applied fine), and a plain mouse-enabled `Frame` overlay would also eat left taps (no click pass-through on this client). A direct `OnMouseDown` script on the stock button is the minimal proven mechanic: the layout already installs scripts on the arc buttons this way and casting stays clean. The left-click use path is untouched.
 
-## Picker content
+## Picker
 
-- **Usable bag items** — any item with a "Use:" effect (`GetItemSpell(link)
-  ~= nil`), deduped by item ID, showing icon + stack count.
-- **Buff spells** — known spells filtered to *helpful* (`IsHelpfulSpell`,
-  usable on player/friendly) minus attack spells (`IsAttackSpell`) minus
-  passives (`IsPassiveSpell`). Then kept if **whitelisted** (`ALWAYS_BUFF`
-  in `MobileUIDynamicBar.lua` — the Ascension long buffs, always shown) or
-  **currently active** on the player (a discovery net for buffs not yet
-  whitelisted; shows remaining time, e.g. `12m`).
-- Spellbook scan order: `GetSpellBookItemName` (documented) → `GetSpellName`
-  → `GetSpellBookItemInfo`+`GetSpellInfo` (undocumented last resort). A
-  debug line reports which path ran and how many were kept.
-- Grid: 4×3 (12 per page), page `<`/`>` controls, clamped to screen, anchored
-  above the held button. Each cell shows icon + name (duration for active
-  buffs).
+A **scrollable list** (no paging) grouped by category, in a larger frame
+(340×460, clamped to screen, height adapts to the window):
 
-> **Why a whitelist instead of "10+ minute buffs"?** 3.3.5 has no
-> spell-duration API, and this Ascension client has **no tooltip
-> line-reading API either** (`GetNumTooltipLines` is nil on both the global
-> and addon-created tooltips — verified in-game), so duration can't be read
-> at all. The whitelist is the source of truth for long buffs: add any new
-> long buff to `ALWAYS_BUFF` in `MobileUIDynamicBar.lua`. The active-buff
-> rule is the safety net for buffs not yet whitelisted.
+- **Items** — usable bag items (any item with a "Use:" effect,
+  `GetItemSpell(link) ~= nil`), deduped by item ID, showing icon + stack count.
+- **Spells** — known spells filtered to *helpful* (`IsHelpfulSpell`, usable
+  on player/friendly) minus attack spells (`IsAttackSpell`) minus passives
+  (`IsPassiveSpell`). **No keep/drop filter** — every candidate shows,
+  sorted alphabetically. Active buffs show remaining time (e.g. `12m`).
+- **Mounts** — split out of the spell scan via `GetSpellBookItemInfo`'s book
+  type (`"MOUNT"` vs `"SPELL"`).
+
+Each row: small icon (26px) + name + count/duration. Scroll via the
+scrollbar or mouse wheel. Spellbook scan order: `GetSpellBookItemName`
+(documented) → `GetSpellName` → `GetSpellBookItemInfo`+`GetSpellInfo`
+(undocumented last resort). A debug line reports which path ran and the
+candidate counts (`N candidates (X spells, Y mounts)`), plus a
+`candidate-rejected:` line with the reason (`passive`/`attack`/`nothelpful`)
+for tuning.
+
+> **Why no duration filter?** 3.3.5 has no spell-duration API, and this
+> Ascension client has **no tooltip line-reading API either**
+> (`GetNumTooltipLines` is nil on both the global and addon-created tooltips
+> — verified in-game), so duration can't be read at all. The picker shows
+> every helpful non-passive non-attack spell; remaining time is shown only
+> for buffs currently active on the player (UnitBuff gives the exact
+> duration).
 
 Spells assign as plain spell slots: clicking casts at the current target
 (stock behavior). Target-required buffs (Blessing-type) need a target or an
@@ -84,12 +95,12 @@ just work.
 
 ## Persistence / revert
 
-Assignments live in the **client's action-bar save data** (slots 66–70), so
+Assignments live in the **client's action-bar save data** (slots 66–71), so
 they survive reload/logout for free. Revert (`/mui dynamicbar off` or layout
 revert) re-parks the strip buttons off-screen exactly as the layout left the
-tail, but **leaves the slot contents in place** — they are the player's own
-action slots (the layout revert also restores the tail's original anchors and
-shown state from `saved.bar2tail`).
+tail, **uns skins** them, but **leaves the slot contents in place** — they are
+the player's own action slots (the layout revert also restores the tail's
+original anchors and shown state from `saved.bar2tail`).
 
 ## Taint safety
 
@@ -115,9 +126,7 @@ shown state from `saved.bar2tail`).
   assign items/buffs)"
 - Saved var: `MobileDB.dynamicBar`
 
-## In-game verification checklist (first session)
-
-These are the assumptions this client hasn't been tested against yet:
+## In-game verification checklist
 
 1. **The `OnMouseDown` script on the stock button doesn't taint the tap path**
    — assign a hearthstone to a strip button, tap it, and confirm no
@@ -128,19 +137,24 @@ These are the assumptions this client hasn't been tested against yet:
 3. **Spell pickup name** — the log line shows which of
    `PickupSpellBookItem`/`PickupSpell` ran; verify a buff spell assigns and
    casts.
-4. **Slot mapping 6–10 → 66–70** — confirmed by the `GetActionInfo` debug
+4. **Slot mapping 6–11 → 66–71** — confirmed by the `GetActionInfo` debug
    line.
 5. **No dangling cursor item on dismiss** — hold a filled button, dismiss
    the picker, and the slot's item should stay in the slot (re-placed).
+6. **LBF circular skin on the strip buttons** — native icon/cooldown/count
+   still display (stock OnEvent kept) with no combat taint errors.
+7. **Strip size** — the `applied 6 button(s) size=…` log line shows whether
+   the 64px target fit or shrank; adjust the window or `TARGET_SIZE` if the
+   size looks off.
 
 The debug ring (`MobileUIDebugLog` SavedVariable, on disk after `/reload`
 or logout) is the source of truth — no chat prints.
 
 ## Files
 
-- `MobileUIDynamicBar.lua` — the module (strip + catchers + picker +
-  assignment)
-- `MobileUILayout.lua` — guard skip (`HideBar2Tail`), apply step, revert hook
+- `MobileUIDynamicBar.lua` — the module (strip + picker + assignment)
+- `MobileUILayout.lua` — guard skip (`HideBar2Tail`), apply step, revert
+  hook, exposed `SkinButton`/`UnskinButton`
 - `MobileUI.lua` — default, slash command, options handler
 - `MobileUIOptions.xml` — checkbox
 - `MobileUI.toc` — file list, version bump
