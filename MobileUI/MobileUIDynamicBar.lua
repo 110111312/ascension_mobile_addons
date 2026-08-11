@@ -47,6 +47,9 @@
 --      item left dangling when the picker is dismissed).
 --   5. LBF circular skin on the strip buttons keeps the native icon/cooldown
 --      display working (stock OnEvent kept) with no combat taint errors.
+--   6. This client strips ScrollFrame:SetVerticalScroll and
+--      Slider:SetObeyStepOnDrag (like GameTooltip:GetNumTooltipLines), so the
+--      picker scrolls via a plain clipped viewport + manual content offset.
 
 local FIRST_BTN = 6      -- MultiBarBottomLeftButton6..11
 local MAX_BTN   = 6      -- 6 buttons (6-11)
@@ -72,7 +75,7 @@ local active     = false
 local pendingDefer = nil
 
 local menu, clickCatcher, menuTitle, menuHint, closeBtn
-local scroll, content, scrollBar
+local viewport, content, scrollBar
 local rowPool, headerPool = {}, {}
 local pickerButton, entries
 -- Forward refs: assigned below; referenced by the menu rows' OnClick and by
@@ -315,28 +318,30 @@ local function CreateMenu()
     closeBtn:SetText("X")
     closeBtn:SetScript("OnClick", ClosePicker)
 
-    scroll = CreateFrame("ScrollFrame", nil, menu)
-    scroll:SetPoint("TOPLEFT", menu, "TOPLEFT", 14, -44)
-    scroll:SetPoint("BOTTOMRIGHT", menu, "BOTTOMRIGHT", -30, 12)
-    content = CreateFrame("Frame", nil, scroll)
+    -- Viewport + manual scroll: this Ascension client strips ScrollFrame's
+    -- SetVerticalScroll and Slider's SetObeyStepOnDrag (verified in-game), so
+    -- no ScrollFrame — a plain clipped frame whose content is moved by the
+    -- scrollbar instead.
+    viewport = CreateFrame("Frame", nil, menu)
+    viewport:SetPoint("TOPLEFT", menu, "TOPLEFT", 14, -44)
+    viewport:SetPoint("BOTTOMRIGHT", menu, "BOTTOMRIGHT", -30, 12)
+    viewport:SetClipsChildren(true)
+    content = CreateFrame("Frame", nil, viewport)
     content:SetWidth(MENU_W - 14 - 30)
-    scroll:SetScrollChild(content)
+    content:SetPoint("TOPLEFT", viewport, "TOPLEFT", 0, 0)
 
     scrollBar = CreateFrame("Slider", nil, menu, "UIPanelScrollBarTemplate")
-    scrollBar:SetPoint("TOPRIGHT", scroll, "TOPRIGHT", 4, 0)
-    scrollBar:SetPoint("BOTTOMRIGHT", scroll, "BOTTOMRIGHT", 4, 0)
+    scrollBar:SetPoint("TOPRIGHT", viewport, "TOPRIGHT", 4, 0)
+    scrollBar:SetPoint("BOTTOMRIGHT", viewport, "BOTTOMRIGHT", 4, 0)
     scrollBar:SetMinMaxValues(0, 1)
     scrollBar:SetValue(0)
     scrollBar:SetValueStep(1)
-    scrollBar:SetObeyStepOnDrag(true)
     scrollBar:SetScript("OnValueChanged", function(self, value)
-        scroll:SetVerticalScroll(value)
+        content:ClearAllPoints()
+        content:SetPoint("TOPLEFT", viewport, "TOPLEFT", 0, value)
     end)
-    scroll:SetScript("OnVerticalScroll", function(self, offset)
-        scrollBar:SetValue(offset)
-    end)
-    scroll:EnableMouseWheel(true)
-    scroll:SetScript("OnMouseWheel", function(self, delta)
+    viewport:EnableMouseWheel(true)
+    viewport:SetScript("OnMouseWheel", function(self, delta)
         local _, max = scrollBar:GetMinMaxValues()
         local v = scrollBar:GetValue() - delta * 30
         if v < 0 then v = 0 elseif v > max then v = max end
@@ -438,7 +443,8 @@ local function RebuildList()
     local maxScroll = math.max(0, y - viewH)
     scrollBar:SetMinMaxValues(0, maxScroll)
     scrollBar:SetValue(0)
-    scroll:SetVerticalScroll(0)
+    content:ClearAllPoints()
+    content:SetPoint("TOPLEFT", viewport, "TOPLEFT", 0, 0)
 end
 
 local function OpenPicker(btnIndex)
