@@ -83,6 +83,20 @@ local GROUP_NAMES = {
 }
 local GROUP_ORDER = { "item", "spell", "mount" }
 
+-- Attack spells on this character that IsHarmfulSpell (stripped on this
+-- client) would normally reject. Exact-name blacklist — a stopgap until a
+-- working harmful-spell API is found. Range can't be used as a signal:
+-- buffs castable on friendly targets have large ranges too.
+local HARMFUL_NAMES = {
+    ["Auto Attack"] = true,
+    ["Throw"] = true,
+    ["Wand"] = true,
+    ["Runeblade"] = true,
+    ["Cryobrand"] = true,
+    ["Elemental Burst"] = true,
+    ["Primordial Blast"] = true,
+}
+
 MobileUIDynamicBar = {}
 
 local usedButtons = {}   -- [btnIndex] = true while the strip is active
@@ -239,16 +253,9 @@ local function BuildEntries()
                 if helpful == false then keep, why = false, "nothelpful" end
                 -- Profession recipes (trade skills) are not bar-worthy.
                 if trade then keep, why = false, "trade" end
-                -- Fallback when the helpful/harmful APIs are stripped: attack
-                -- spells (Throw, Wand, ...) have a range; self-buffs don't.
-                -- GetSpellInfo's return order differs between references, so
-                -- read maxRange from either position (6th on 3.3.5, 9th on
-                -- the 9-return form) and take whichever is present.
-                if keep then
-                    local _, _, _, _, _, mrA, _, mrB, mrC = GetSpellInfo(i, "spell")
-                    local maxRange = mrC or mrA
-                    if maxRange and maxRange > 0 then keep, why = false, "ranged" end
-                end
+                -- Fallback when IsHarmfulSpell is stripped: exact-name
+                -- blacklist of known attack spells on this character.
+                if keep and HARMFUL_NAMES[sname] then keep, why = false, "harmful" end
                 if keep then
                     local btype = GetSpellBookItemInfo and select(1, GetSpellBookItemInfo(i, "spell"))
                     local kind = (btype == "MOUNT" or sname:find("Mount", 1, true)) and "mount" or "spell"

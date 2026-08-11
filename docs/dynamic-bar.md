@@ -80,11 +80,11 @@ adapts to the tallest column (cell height shrinks if a category is long):
 `spell APIs:` line reports which exist. The filters that depend on them
 silently no-op, so two fallbacks keep the list clean:
 
-- **Range fallback** — attack spells (Throw, Wand, Runeblade, …) have a
-  range; self-buffs don't. Spells with `maxRange > 0` are rejected
-  (`ranged`). `GetSpellInfo`'s return order differs between references, so
-  maxRange is read from either position (6th on 3.3.5, 9th on the 9-return
-  form).
+- **Harmful blacklist** — an exact-name blacklist of known attack spells on
+  this character (Auto Attack, Throw, Wand, Runeblade, Cryobrand, Elemental
+  Burst, Primordial Blast) rejects them as `harmful`. A stopgap until a
+  working harmful-spell API is found. Range is deliberately **not** used as
+  a signal: buffs castable on friendly targets have large ranges too.
 - **General-tab-only scan** — only spellbook tab 1 (General) is scanned;
   profession recipes live on their own tabs, so they never enter the picker.
   The log's `spell tabs:` line lists every tab name + count to verify.
