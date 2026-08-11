@@ -14,15 +14,23 @@
 --                         stack. Taint-clean by construction (same path every
 --                         arc spell cast uses). The client renders icon /
 --                         cooldown / stack count natively — no display code.
---   Hold (right click) -> assign: a transparent catcher over the button
---                         swallows the right-click (so the stock
---                         right-click-pickup never fires) and opens the
---                         picker: usable bag items (GetItemSpell ~= nil) +
---                         known non-passive spells, active player buffs
---                         sorted first. Tapping an entry assigns it to the
---                         button's action slot via
---                         PickupContainerItem/PickupSpell + PlaceAction —
---                         not on the taint-protected use path at all.
+--   Hold (right click) -> assign: an OnMouseDown script installed on the
+--                         stock button (same way the layout installs OnEnter
+--                         on the arc buttons) opens the picker on right-down:
+--                         usable bag items (GetItemSpell ~= nil) + known
+--                         non-passive spells, active player buffs sorted
+--                         first. Tapping an entry assigns it to the button's
+--                         action slot via PickupContainerItem/PickupSpell +
+--                         PlaceAction — not on the taint-protected use path.
+--                         The stock right-click pickup on release puts the
+--                         slot's item on the cursor; ClosePicker / AssignEntry
+--                         re-place it (PlaceAction) so nothing is lost.
+--
+-- Why no catcher overlay: a Button with RegisterForClicks(right-only) got
+-- NO mouse events on this client (verified in-game via the debug ring), and
+-- a plain Frame overlay would also eat left taps (no pass-through here). A
+-- direct OnMouseDown script is the minimal proven mechanic — the layout
+-- already installs scripts on the arc buttons and casting stays clean.
 --
 -- Assignments live in the client's action-bar save data (slots 66-70), so
 -- they persist across reload/logout for free. Revert re-parks the tail
@@ -30,11 +38,12 @@
 -- contents in place (they are the player's own action slots).
 --
 -- In-game verification notes (first session):
---   1. Left taps pass through the right-click-only catcher to the stock
---      button (standard WoW hit-testing for unregistered buttons).
---   2. PickupContainerItem -> PlaceAction assigns cleanly (no taint on the
---      next UseAction click) on this Ascension client.
+--   1. The OnMouseDown script on the stock button does not taint the
+--      left-click use path (no 'UseAction()' taint error on tap).
+--   2. PickupContainerItem -> PlaceAction assigns cleanly on this client.
 --   3. PickupSpellBookItem vs PickupSpell — both are tried; log which exists.
+--   4. The right-up stock pickup is re-placed by ClosePicker (no cursor
+--      item left dangling when the picker is dismissed).
 
 local FIRST_BTN = 6      -- MultiBarBottomLeftButton6..10
 local MAX_BTN   = 5      -- up to 5 buttons (6-10)
@@ -49,7 +58,6 @@ local PER_PAGE = COLS * ROWS
 
 MobileUIDynamicBar = {}
 
-local catchers   = {}    -- [btnIndex] = catcher button
 local usedButtons = {}   -- [btnIndex] = true while the strip is active
 local active     = false
 local pendingDefer = nil
@@ -57,7 +65,9 @@ local pendingDefer = nil
 local menu, clickCatcher, menuTitle, menuHint
 local menuCells, prevBtn, nextBtn, pageLabel
 local pickerButton, entries, curPage, pages
-local AssignEntry -- assigned below; referenced by the menu cells' OnClick
+-- Forward refs: assigned below; referenced by the menu cells' OnClick and by
+-- ClosePicker (which runs before they are defined).
+local AssignEntry, ReturnCursorContent
 
 -- ============================================================================
 -- Combat deferral (same pattern as the layout: re-anchor/Show/Hide of
@@ -146,17 +156,20 @@ local function BuildEntries()
     end
     local spells = {}
     if GetSpellBookItemInfo then
-        for tab = 1, GetNumSpellTabs() do
+        local nt = GetNumSpellTabs() or 0
+        for tab = 1, nt do
             local _, _, offset, num = GetSpellTabInfo(tab)
-            for i = offset + 1, offset + num do
-                local stype, sid = GetSpellBookItemInfo(i, "spell")
-                if stype == "SPELL" and sid then
-                    local sname, _, sicon = GetSpellInfo(sid)
-                    if sname and not IsPassiveSpell(sname) then
-                        table.insert(spells, {
-                            kind = "spell", spellbookID = i, name = sname,
-                            icon = sicon, buff = buffSet[sname] and true or false,
-                        })
+            if offset and num then
+                for i = offset + 1, offset + num do
+                    local stype, sid = GetSpellBookItemInfo(i, "spell")
+                    if stype == "SPELL" and sid then
+                        local sname, _, sicon = GetSpellInfo(sid)
+                        if sname and not IsPassiveSpell(sname) then
+                            table.insert(spells, {
+                                kind = "spell", spellbookID = i, name = sname,
+                                icon = sicon, buff = buffSet[sname] and true or false,
+                            })
+                        end
                     end
                 end
             end
@@ -199,6 +212,14 @@ local function RenderPage()
 end
 
 local function ClosePicker()
+    -- The hold's right-UP fires the stock ActionButton_OnClick, which does
+    -- PickupAction on the slot — so the slot's item can be sitting on the
+    -- cursor when the picker closes without an assignment. Put it back.
+    if pickerButton and GetCursorInfo() then
+        local slot = SlotForButton(pickerButton)
+        if PlaceAction then PlaceAction(slot) end
+        if GetCursorInfo() then ReturnCursorContent() end -- place failed
+    end
     if menu then menu:Hide() end
     if clickCatcher then clickCatcher:Hide() end
     pickerButton = nil
@@ -281,6 +302,8 @@ local function OpenPicker(btnIndex)
     entries = BuildEntries()
     curPage = 1
     pages = math.max(1, math.ceil(#entries / PER_PAGE))
+    MobileUI_Debug(string.format("DynamicBar: picker opened btn=%d entries=%d pages=%d",
+        btnIndex, #entries, pages))
     menuTitle:SetText("Assign to button " .. (btnIndex - FIRST_BTN + 1))
     if InCombatLockdown() then
         menuHint:SetText("Assigning is disabled in combat.")
@@ -301,8 +324,7 @@ local function OpenPicker(btnIndex)
     clickCatcher:Show()
     menu:SetFrameLevel(clickCatcher:GetFrameLevel() + 2)
     menu:Show()
-    MobileUI_Debug(string.format("DynamicBar: picker opened for btn %d (%d entries, %d pages)",
-        btnIndex, #entries, pages))
+    MobileUI_Debug(string.format("DynamicBar: picker shown for btn %d", btnIndex))
 end
 
 -- ============================================================================
@@ -311,7 +333,7 @@ end
 -- Returns whatever is on the cursor: items to a free bag slot (so a
 -- PlaceAction exchange of a previous item assignment is never lost),
 -- anything else (spell / macro) dropped.
-local function ReturnCursorContent()
+ReturnCursorContent = function()
     local t = GetCursorInfo()
     if not t then return end
     if t == "item" then
@@ -338,6 +360,12 @@ AssignEntry = function(entry)
         return
     end
     local slot = SlotForButton(pickerButton)
+    -- The hold's right-UP fired the stock PickupAction: the slot's previous
+    -- content may be on the cursor — put it back before the new pickup.
+    if GetCursorInfo() then
+        if PlaceAction then PlaceAction(slot) end
+        if GetCursorInfo() then ReturnCursorContent() end
+    end
     if entry.kind == "item" then
         PickupContainerItem(entry.c, entry.s)
         if PlaceAction then PlaceAction(slot) end
@@ -360,7 +388,7 @@ AssignEntry = function(entry)
 end
 
 -- ============================================================================
--- Strip buttons + right-click catchers
+-- Strip buttons + hold detection (OnMouseDown on the stock button)
 -- ============================================================================
 local function ShowButton(i, size, x0, y, pitch)
     local b = _G["MultiBarBottomLeftButton" .. i]
@@ -377,30 +405,25 @@ local function ShowButton(i, size, x0, y, pitch)
     if hk then hk:Hide() end
     local nm = _G["MultiBarBottomLeftButton" .. i .. "Name"]
     if nm then nm:Hide() end
+    -- Hold detection: right-down opens the picker (works for empty and
+    -- filled slots). The left path is untouched — the stock OnClick still
+    -- fires UseAction on left-up with no addon on the stack. The stock
+    -- right-click pickup on release lands on the cursor; ClosePicker and
+    -- AssignEntry re-place it.
+    b:SetScript("OnMouseDown", function(self, button)
+        if button == "RightButton" then
+            MobileUI_Debug(string.format("DynamicBar: btn %s hold", tostring(self:GetName())))
+            local ok, err = pcall(OpenPicker, i)
+            if not ok then
+                MobileUI_Debug("DynamicBar: OpenPicker ERROR: " .. tostring(err))
+            end
+        elseif MobileDB and MobileDB.debug then
+            MobileUI_Debug(string.format("DynamicBar: btn %s down button=%s",
+                tostring(self:GetName()), tostring(button)))
+        end
+    end)
     b:Show()
     return true
-end
-
-local function CreateCatcher(i, size, x0, y, pitch)
-    local c = catchers[i]
-    if not c then
-        c = CreateFrame("Button", nil, UIParent)
-        c:SetFrameStrata("HIGH")
-        c:SetScript("OnMouseDown", function(self, button)
-            if button ~= "RightButton" then return end
-            OpenPicker(self.btnIndex)
-        end)
-        catchers[i] = c
-    end
-    c.btnIndex = i
-    c:SetSize(size, size)
-    c:ClearAllPoints()
-    c:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x0 + (i - FIRST_BTN) * pitch, y)
-    -- Right-click only: left taps pass through the catcher to the stock
-    -- button below (stock hit-testing skips frames not registered for the
-    -- pressed button).
-    c:RegisterForClicks("RightButtonDown")
-    c:Show()
 end
 
 -- ============================================================================
@@ -432,10 +455,7 @@ function MobileUIDynamicBar:Apply()
     end
     for k = 1, count do
         local i = FIRST_BTN + k - 1
-        if ShowButton(i, size, x0, y, pitch) then
-            CreateCatcher(i, size, x0, y, pitch)
-            usedButtons[i] = true
-        end
+        if ShowButton(i, size, x0, y, pitch) then usedButtons[i] = true end
     end
     active = true
     MobileUI_Debug(string.format(
@@ -452,10 +472,9 @@ function MobileUIDynamicBar:Revert()
     end
     ClosePicker()
     for i in pairs(usedButtons) do
-        local c = catchers[i]
-        if c then c:Hide() end
         local b = _G["MultiBarBottomLeftButton" .. i]
         if b then
+            b:SetScript("OnMouseDown", nil)
             -- Re-park exactly like the layout leaves the rest of the tail
             -- (off-screen; the client's combat re-show renders it invisible).
             b:ClearAllPoints()
