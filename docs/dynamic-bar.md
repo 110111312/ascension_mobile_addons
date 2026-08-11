@@ -79,12 +79,14 @@ adapts to the tallest column (cell height shrinks if a category is long):
 `IsHelpfulSpell`, `IsHarmfulSpell`, `IsAttackSpell` and `IsPassiveSpell` all
 **exist and work**; `IsTradeSkill` is stripped (nil). Two quirks matter:
 
-- **Harmful spells return `nil` (not `false`) from `IsHelpfulSpell`** — so
-  the helpful filter must be `not helpful`, not `helpful == false`.
-  `IsHarmfulSpell` also works and rejects them (`harmful`).
-- **All tabs are scanned** — on Ascension the buffs live on custom tabs
-  (Engravement / Glyphic / Riftblade), not just General. The log's
-  `spell tabs:` line lists every tab name + count.
+- **`IsHelpfulSpell` can't be used as a filter** — it returns `nil` (not
+  `false`) for harmful spells *and* for weapon enchants (Weapon Engraving,
+  Palm Sigil: Fire). `IsHarmfulSpell` is the correct discriminator: harmful
+  spells have `hrm=1`, weapon enchants have `hrm=nil` (so they're kept).
+- **The General tab is mostly skipped** — it holds racials/toggles/teleports
+  (Every Man for Himself, PvE Mode, War Mode). Only **mounts** and the
+  **Resurrect** teleports are kept from it (rejected as `general`); the
+  custom tabs (Engravement / Glyphic / Riftblade) are scanned normally.
 
 Recipes: `IsTradeSkill` is stripped, so they can't be filtered by API yet.
 The per-spell dump (`DynamicBar: spell: <name> | type=… hlp=… hrm=… …`)
@@ -94,16 +96,18 @@ can be derived from data instead of guessed.
 Each row: small icon (20px) + name + count/duration. Tap a row to assign,
 hold a row for its tooltip (global `GameTooltip`, pcall-wrapped, anchored to
 **the cell** — anchoring to the 520px menu would push it off-screen on a
-phone). Spellbook scan order: `GetSpellBookItemName` (documented) →
-`GetSpellName` → `GetSpellBookItemInfo`+`GetSpellInfo` (undocumented last
-resort). The tooltip uses `GameTooltip:SetSpellBookItem(spellbookID, "spell")`
-— `GetSpellBookItemInfo`'s 2nd return (spellID) is nil on this client and
-`GetSpellInfo` has no spellID return (9-value form: …castingTime, minRange,
-maxRange), so `SetSpellByID` can't work. A debug line reports which path ran
-and the candidate counts (`N candidates (X spells, Y mounts)`), a `kept:`
-line lists every kept spell (mounts marked `[mount]`), and a
-`candidate-rejected:` line gives the reason
-(`passive`/`attack`/`harmful`/`nothelpful`/`trade`) for tuning.
+phone). The tooltip uses `GameTooltip:SetSpell(spellbookID, "spell")` —
+`SetSpellBookItem` is stripped on this client, `GetSpellBookItemInfo`'s 2nd
+return (spellID) is nil, and `GetSpellInfo` has no spellID return (9-value
+form), so `SetSpellByID` can't work. The tooltip hides on **any** button-up,
+on click, and on menu hide, so a stale tooltip (from a hold whose right-up
+was lost on a flaky connection) can't linger and swallow the next tap.
+Spellbook scan order: `GetSpellBookItemName` (documented) → `GetSpellName`
+→ `GetSpellBookItemInfo`+`GetSpellInfo` (undocumented last resort). A debug
+line reports which path ran and the candidate counts
+(`N candidates (X spells, Y mounts)`), a `kept:` line lists every kept
+spell (mounts marked `[mount]`), and a `candidate-rejected:` line gives the
+reason (`passive`/`attack`/`harmful`/`general`) for tuning.
 
 > **Why no scrolling?** This Ascension client strips the scroll primitives
 > (`ScrollFrame:SetVerticalScroll`, `Slider:SetObeyStepOnDrag`,

@@ -252,16 +252,24 @@ local function BuildEntries()
                 if passive then keep, why = false, "passive" end
                 if attack  then keep, why = false, "attack"  end
                 if harmful then keep, why = false, "harmful" end
-                -- Restrict to friendly-target spells only when the API exists.
-                -- NOTE: harmful spells return nil (not false) from
-                -- IsHelpfulSpell on this client, so `not helpful` is the
-                -- correct check.
-                if IsHelpfulSpell and not helpful then keep, why = false, "nothelpful" end
+                -- NOTE: IsHelpfulSpell returns nil (not false) for harmful
+                -- spells AND for weapon enchants (Weapon Engraving, Palm
+                -- Sigil: Fire) on this client, so it can't be used as a
+                -- filter — IsHarmfulSpell above is the correct discriminator
+                -- (harmful spells have hrm=1, weapon enchants hrm=nil).
                 -- Profession recipes (trade skills) are not bar-worthy.
                 if trade then keep, why = false, "trade" end
+                local kind = nil
                 if keep then
                     local btype = GetSpellBookItemInfo and select(1, GetSpellBookItemInfo(i, "spell"))
-                    local kind = (btype == "MOUNT" or sname:find("Mount", 1, true)) and "mount" or "spell"
+                    kind = (btype == "MOUNT" or sname:find("Mount", 1, true)) and "mount" or "spell"
+                    -- The General tab is mostly racials/toggles/teleports;
+                    -- keep only mounts and the Resurrect teleports from it.
+                    if tab == 1 and kind ~= "mount" and not sname:find("Resurrect", 1, true) then
+                        keep, why = false, "general"
+                    end
+                end
+                if keep then
                     local entry = {
                         kind = kind, spellbookID = i, name = sname,
                         icon = GetSpellTexture and GetSpellTexture(i, "spell"),
@@ -363,6 +371,7 @@ local function GetCell(kind, n)
         cell.count:SetPoint("BOTTOMRIGHT", cell.icon, "BOTTOMRIGHT", 0, 0)
         cell:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
         cell:SetScript("OnClick", function(self)
+            HideEntryTooltip()
             if self.entry then AssignEntry(self.entry) end
         end)
         cell:SetScript("OnMouseDown", function(self, button)
@@ -372,7 +381,10 @@ local function GetCell(kind, n)
             end
         end)
         cell:SetScript("OnMouseUp", function(self, button)
-            if button == "RightButton" then HideEntryTooltip() end
+            -- Hide on ANY button-up: a stale tooltip (from a hold whose
+            -- right-up was lost on a flaky connection) must not linger and
+            -- swallow the next tap.
+            HideEntryTooltip()
         end)
         cell:SetScript("OnEnter", function(self)
             if self.entry then ShowEntryTooltip(self, self.entry) end
@@ -404,6 +416,7 @@ local function CreateMenu()
     -- All dismissal paths (X, ESC, tap-outside, assign, revert) end in
     -- menu:Hide(); the cursor cleanup lives here so nothing is lost.
     menu:SetScript("OnHide", function()
+        HideEntryTooltip()
         if pickerButton and GetCursorInfo() then
             local slot = SlotForButton(pickerButton)
             if PlaceAction then PlaceAction(slot) end
