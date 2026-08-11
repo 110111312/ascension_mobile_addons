@@ -74,3 +74,22 @@ function MobileUIClick:Toggle()
     end
     return enabled
 end
+
+-- While the cursor holds an item, the BUTTON1 -> TURNORACTION override
+-- swallows the world-click that stock uses to drop the item: the binding
+-- fires instead, the pickup is cancelled and the item returns to the bag.
+-- Clear the override while holding so the stock drop works, and re-apply
+-- it when the cursor empties. Called by the MobileUIBagSwap poll on cursor
+-- holding-state changes.
+function MobileUIClick:SetCursorHolding(holding)
+    if not (MobileDB and MobileDB.tapInteract) then return end
+    if holding then
+        if owner then
+            ClearOverrideBindings(owner)
+            MobileUI_Debug("Tap=Interact: override cleared (cursor holding item)")
+        end
+    else
+        SetOverrideBinding(GetOwner(), false, "BUTTON1", "TURNORACTION")
+        MobileUI_Debug("Tap=Interact: BUTTON1 -> TURNORACTION re-applied")
+    end
+end

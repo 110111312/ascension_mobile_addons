@@ -371,10 +371,16 @@ end
 -- in this client.
 
 local prevCursorEmpty = true -- cursor starts empty at login
+local overrideHolding = false -- tap-interact BUTTON1 override cleared while holding
 
 -- The cursor just picked up an item from a container slot; act on it.
 -- itemButton is the frame the pickup happened on (used to anchor the menu).
 local function OnCursorPickup(itemButton, container, slot, link)
+    local itemName = link and select(1, GetItemInfo(link)) or "?"
+    MobileUI_Debug(string.format(
+        "CursorPickup: name=%s c=%s s=%s focus=%s",
+        itemName, tostring(container), tostring(slot),
+        itemButton and itemButton:GetName() or "?"))
     local merchantOpen = MerchantFrame and MerchantFrame:IsShown()
 
     -- Tap = Sell: at a vendor, put the item back and sell it. The sell path
@@ -432,6 +438,8 @@ local function OnCursorPickup(itemButton, container, slot, link)
     -- Everything else — use-items, junk, materials — is left alone: the
     -- item stays on the cursor, exactly as stock. The tap=use mechanism is
     -- built separately (docs/tap-use.md).
+    MobileUI_Debug(string.format(
+        "CursorPickup: %s -> no reaction (junk/use-item)", itemName))
 end
 
 local function HandleCursorPickup()
@@ -465,6 +473,23 @@ local function EnsurePoll()
         local hasItem = GetCursorInfo() ~= nil
         if hasItem and prevCursorEmpty then
             HandleCursorPickup()
+        elseif not hasItem and not prevCursorEmpty then
+            -- Cursor emptied: a drop (tap outside the bag), a place into
+            -- another slot, a sell, an equip. Logging this tells us whether
+            -- the tap-outside actually empties the cursor.
+            MobileUI_Debug("CursorDrop: cursor emptied")
+        end
+        -- Sync the tap-interact BUTTON1 override with the cursor: while an
+        -- item is held, the override must be cleared so a world tap drops
+        -- the item (stock) instead of firing TURNORACTION and returning it
+        -- to the bag. Re-read the cursor because a reaction (sell/equip/
+        -- swap) may have emptied it within this frame.
+        local holding = GetCursorInfo() ~= nil
+        if holding ~= overrideHolding then
+            overrideHolding = holding
+            if MobileUIClick and MobileUIClick.SetCursorHolding then
+                MobileUIClick:SetCursorHolding(holding)
+            end
         end
         prevCursorEmpty = not hasItem
     end)

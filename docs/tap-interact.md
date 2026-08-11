@@ -68,6 +68,27 @@ The override is set at `PLAYER_ENTERING_WORLD` and on toggle.
 - **Right-click (BUTTON2) is untouched** — hold on Artemis still sends
   right-click and behaves natively.
 
+## Dropping items from the cursor
+
+Stock WoW lets you remove an item from your bags by picking it up and
+clicking the world — the item is dropped (destroyed). The BUTTON1 override
+would swallow that world-click: the `TURNORACTION` binding fires instead,
+the pickup is cancelled, and the item silently returns to its bag slot
+(no drop, no confirmation — stock never confirms a ground drop).
+
+Fix: the pickup poll in `MobileUIBagSwap.lua` tracks the cursor and calls
+`MobileUIClick:SetCursorHolding(holding)` on holding-state changes:
+
+- **Cursor holds an item** → `ClearOverrideBindings(owner)` — the stock
+  left-click world behavior returns, so a tap on the ground drops the item.
+- **Cursor empties** → `SetOverrideBinding(owner, false, "BUTTON1",
+  "TURNORACTION")` re-applies tap=interact.
+
+The override is only ever cleared while an item is actually on the cursor
+(UI-frame clicks are unaffected either way — hit-testing beats the
+binding), and it is re-applied the moment the cursor empties, including
+when a sell/equip/swap reaction empties it within the same frame.
+
 ## Revert / disable
 
 `/mui tap` toggles. Disabling calls `ClearOverrideBindings(owner)`
