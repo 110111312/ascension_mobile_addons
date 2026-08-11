@@ -187,6 +187,7 @@ local function SpellRequiresStance(spellbookID, sname)
                     -- requirement, not a stance. Keep (profession spells are
                     -- handled by the profession detection, not this filter).
                     local hasRank = req:match("%(%d+%)") ~= nil
+                        or req:match("%(%s*[Rr]ank%s*%d+%s*%)") ~= nil
                     req = req:gsub("%s*%(.+%)%s*$", ""):gsub("[%.%s]+$", "")
                     if hasRank then
                         MobileUI_Debug(string.format("DynamicBar: stance-scan: %s requires '%s' (rank) -> keep", sname, req))
@@ -224,33 +225,47 @@ local function SpellRequiresStance(spellbookID, sname)
     return requires
 end
 
--- Profession detection (filter, not whitelist): GetProfessions() is
--- stripped on this client, and profession spells live in the General tab
--- (not their own tab), so the names are DERIVED from the data instead:
---   * sub-skills/recipes carry a "Requires <Prof> (rank)" tooltip line
---     (e.g. Disenchant: "Requires Enchanting (1)") — that derives the
---     profession name;
---   * the profession skill itself (e.g. "Enchanting") has no such line,
---     but its NAME matches the derived profession name.
--- Two passes: first derive the profession names from every spell's tooltip,
--- then tag spells whose name matches a derived name or whose own tooltip has
--- a rank line. Cached by spellbookID (tooltip scans are the slow part).
+-- Profession detection (filter, not whitelist): the profession APIs are
+-- stripped on this client (GetProfessions, IsTradeSkill) and
+-- GetSpellBookItemInfo's type is "SPELL" for everything, so the signals
+-- come from the tooltip (verified in-game via the full-tooltip dump):
+--   * profession SKILLS start with "Allows" (or contain "potential skill")
+--     in their tooltip — e.g. Enchanting: "Allows an enchanter to enchant
+--     basic items up to a maximum potential skill of 75...";
+--   * profession SUB-SKILLS (Disenchant, Basic Campfire, Fishing) are
+--     General-tab spells with a cast time / channel that are not
+--     passive/attack/harmful (Throw/Wand have cast times but are harmful).
+-- Cached by spellbookID (tooltip scans are the slow part).
 local profNameCache = {}
-local function SpellProfessionName(spellbookID)
+local function SpellProfessionName(spellbookID, sname, tab)
     if profNameCache[spellbookID] ~= nil then return profNameCache[spellbookID] end
     local prof = nil
     if GameTooltip and GameTooltip.SetSpell then
         local ok = pcall(function()
             GameTooltip:SetOwner(UIParent, "ANCHOR_NONE")
             GameTooltip:SetSpell(spellbookID, "spell")
+            local hasCast = false
             for _, r in ipairs({ GameTooltip:GetRegions() }) do
                 if r and r.GetText and r:GetObjectType() == "FontString" then
-                    local t = (r:GetText() or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("^%s+", "")
-                    local req = t:match("^Requires%s*:?%s*(.+%(%d+%))%s*$")
-                    if req then
-                        prof = req:gsub("%s*%(%d+%)%s*$", ""):gsub("[%.%s]+$", "")
+                    local t = (r:GetText() or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("^%s+", ""):gsub("%s+$", "")
+                    if t:match("^Allows") or t:match("potential skill") then
+                        prof = sname  -- profession skill: the name IS the profession
                         break
                     end
+                    if t:match("%d+%.?%d*%s*sec cast") or t:match("^Channeled") then
+                        hasCast = true
+                    end
+                end
+            end
+            -- Sub-skill: General-tab spell with a cast time / channel, not
+            -- passive/attack/harmful (Throw/Wand have cast times but are
+            -- harmful — excluded here so they can't sneak in as prof).
+            if not prof and tab == 1 and hasCast then
+                local passive = IsPassiveSpell and IsPassiveSpell(spellbookID, "spell")
+                local attack  = IsAttackSpell and IsAttackSpell(spellbookID, "spell")
+                local harmful = IsHarmfulSpell and IsHarmfulSpell(spellbookID, "spell")
+                if not passive and not attack and not harmful then
+                    prof = sname
                 end
             end
         end)
@@ -312,7 +327,8 @@ local function BuildEntries()
         local _, _, offset, num = GetSpellTabInfo(tab)
         if offset and num then
             for i = offset + 1, offset + num do
-                local pn = SpellProfessionName(i)
+                local sname = spellNameFn and spellNameFn(i, "spell")
+                local pn = SpellProfessionName(i, sname, tab)
                 if pn then
                     profByID[i] = pn
                     profNames[pn] = pn
@@ -354,40 +370,39 @@ local function BuildEntries()
                 local keep    = true
                 local why     = nil
                 local kind    = nil
+                local passive = IsPassiveSpell and IsPassiveSpell(i, "spell")
+                local attack  = IsAttackSpell and IsAttackSpell(i, "spell")
+                local harmful = IsHarmfulSpell and IsHarmfulSpell(i, "spell")
+                local trade   = IsTradeSkill and IsTradeSkill(i, "spell")
+                if passive then keep, why = false, "passive" end
+                if attack  then keep, why = false, "attack"  end
+                if harmful then keep, why = false, "harmful" end
+                -- NOTE: IsHelpfulSpell returns nil (not false) for harmful
+                -- spells AND for weapon enchants (Weapon Engraving, Palm
+                -- Sigil: Fire) on this client, so it can't be used as a
+                -- filter — IsHarmfulSpell above is the correct discriminator
+                -- (harmful spells have hrm=1, weapon enchants hrm=nil).
+                -- Profession recipes (trade skills) are not bar-worthy.
+                if trade then keep, why = false, "trade" end
                 if profName then
                     -- Profession spells are explicitly wanted: bypass the
-                    -- candidate filters (the skill may read as passive, and
-                    -- sub-skills carry "Requires <prof> (rank)" which the
-                    -- stance filter would otherwise drop).
+                    -- General-tab and stance filters (the skill may read as
+                    -- passive on other clients, and sub-skills carry
+                    -- "Requires <prof> (rank)" which the stance filter would
+                    -- otherwise drop). passive/attack/harmful still apply.
                     kind = "prof"
-                else
-                    local passive = IsPassiveSpell and IsPassiveSpell(i, "spell")
-                    local attack  = IsAttackSpell and IsAttackSpell(i, "spell")
-                    local harmful = IsHarmfulSpell and IsHarmfulSpell(i, "spell")
-                    local trade   = IsTradeSkill and IsTradeSkill(i, "spell")
-                    if passive then keep, why = false, "passive" end
-                    if attack  then keep, why = false, "attack"  end
-                    if harmful then keep, why = false, "harmful" end
-                    -- NOTE: IsHelpfulSpell returns nil (not false) for harmful
-                    -- spells AND for weapon enchants (Weapon Engraving, Palm
-                    -- Sigil: Fire) on this client, so it can't be used as a
-                    -- filter — IsHarmfulSpell above is the correct discriminator
-                    -- (harmful spells have hrm=1, weapon enchants hrm=nil).
-                    -- Profession recipes (trade skills) are not bar-worthy.
-                    if trade then keep, why = false, "trade" end
-                    if keep then
-                        local btype = GetSpellBookItemInfo and select(1, GetSpellBookItemInfo(i, "spell"))
-                        kind = (btype == "MOUNT" or sname:find("Mount", 1, true)) and "mount" or "spell"
-                        -- The General tab is mostly racials/toggles/teleports;
-                        -- keep only mounts and the Resurrect teleports from it.
-                        if tab == 1 and kind ~= "mount" and not sname:find("Resurrect", 1, true) then
-                            keep, why = false, "general"
-                        end
-                        -- Stance/stealth-required spells (Palm Sigil needs
-                        -- Stealth) are useless on a tap bar.
-                        if keep and SpellRequiresStance(i, sname) then
-                            keep, why = false, "stance"
-                        end
+                elseif keep then
+                    local btype = GetSpellBookItemInfo and select(1, GetSpellBookItemInfo(i, "spell"))
+                    kind = (btype == "MOUNT" or sname:find("Mount", 1, true)) and "mount" or "spell"
+                    -- The General tab is mostly racials/toggles/teleports;
+                    -- keep only mounts and the Resurrect teleports from it.
+                    if tab == 1 and kind ~= "mount" and not sname:find("Resurrect", 1, true) then
+                        keep, why = false, "general"
+                    end
+                    -- Stance/stealth-required spells (Palm Sigil needs
+                    -- Stealth) are useless on a tap bar.
+                    if keep and SpellRequiresStance(i, sname) then
+                        keep, why = false, "stance"
                     end
                 end
                 if keep then

@@ -82,17 +82,19 @@ adapts to the tallest column (cell height shrinks if a category is long):
   `"SPELL"`, so names containing `Mount` are classified as mounts).
 - **Professions** — the player's profession skills and sub-skills
   (e.g. **Enchanting** — clicking it opens the enchanting window — and
-  **Disenchant**). Detected by **filter, not whitelist**: `GetProfessions()`
-  is stripped on this client and profession spells live in the **General
-  tab** (not their own tab), so the names are **derived from the data**:
-  sub-skills/recipes carry a `Requires <Prof> (rank)` tooltip line (e.g.
-  Disenchant: `Requires Enchanting (1)`) which derives the profession name;
-  the profession skill itself has no such line, but its **name matches the
-  derived name**. Two passes: derive the names from every spell's tooltip
-  (cached by spellbookID), then tag spells whose name matches a derived
-  name or whose own tooltip has a rank line. Profession spells **bypass the
-  candidate filters** (the skill may read as passive, and sub-skills carry
-  the rank line which the stance filter would otherwise drop).
+  **Disenchant**). Detected by **filter, not whitelist** — the profession
+  APIs are stripped on this client (`GetProfessions`, `IsTradeSkill`) and
+  `GetSpellBookItemInfo`'s type is `"SPELL"` for everything, so the signals
+  come from the **tooltip** (verified in-game via a full-tooltip dump):
+  - **Profession skills** start with **`Allows`** (or contain
+    `potential skill`) in their tooltip — e.g. Enchanting: *"Allows an
+    enchanter to enchant basic items up to a maximum potential skill of
+    75…"*. No noise spell starts with `Allows`.
+  - **Sub-skills** (Disenchant, Basic Campfire, Fishing) are **General-tab
+    spells with a cast time / channel** that are not passive/attack/harmful
+    (Throw/Wand have cast times but are harmful, so they can't sneak in).
+  Profession spells bypass the General-tab and stance filters but still
+  respect passive/attack/harmful.
 
 **Filtering reality on this client:** `IsHelpfulSpell`, `IsHarmfulSpell`,
 `IsAttackSpell` and `IsPassiveSpell` all **exist and work**; `IsTradeSkill`
