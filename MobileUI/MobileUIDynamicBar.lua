@@ -442,45 +442,34 @@ local function GetCell(kind, n)
             insets = { left = 1, right = 1, top = 1, bottom = 1 },
         })
         cell:SetBackdropBorderColor(1, 0.82, 0, 0)
-        -- Tap-tap: the first touch/tap shows the tooltip and arms the cell
-        -- (gold border); the second tap on the same cell assigns. OnEnter
-        -- (which fires on every touch before OnClick on this client) records
-        -- whether the cell was already armed and re-arms it, so OnClick can
-        -- tell a first tap from a second tap even when the first tap's
-        -- OnClick is missed (the first-open quirk). OnMouseDown is not used
-        -- for the arm/assign decision (it would double-fire with OnClick).
+        -- Tap-tap: the first tap shows the tooltip and arms the cell (gold
+        -- border); the second tap on the same cell assigns. Keyed purely on
+        -- OnClick (which fires on every tap on this client — verified in the
+        -- debug ring: 11 clicks logged in one open) with armedCell == self as
+        -- the discriminator. OnEnter only shows the tooltip on hover; it does
+        -- NOT arm, because OnEnter fires only on the first touch per open and
+        -- cannot be relied on for the arm state.
         cell:SetScript("OnEnter", function(self)
-            if not self.entry then return end
-            self.wasArmed = (armedCell == self)
-            if armedCell and armedCell ~= self then
-                armedCell:SetBackdropBorderColor(1, 0.82, 0, 0)
-                armedCell.wasArmed = false
-            end
-            armedCell = self
-            self:SetBackdropBorderColor(1, 0.82, 0, 0.9)
-            ShowEntryTooltip(self, self.entry)
+            if self.entry then ShowEntryTooltip(self, self.entry) end
         end)
         cell:SetScript("OnClick", function(self, button)
-            MobileUI_Debug(string.format("DynamicBar: cell click btn=%s wasArmed=%s entry=%s",
-                tostring(button), tostring(self.wasArmed),
+            MobileUI_Debug(string.format("DynamicBar: cell click btn=%s armed=%s entry=%s",
+                tostring(button), tostring(armedCell == self),
                 self.entry and self.entry.name or "nil"))
             if not self.entry then return end
-            if self.wasArmed then
-                -- armed by a previous tap: assign
-                self.wasArmed = false
+            if armedCell == self then
+                -- second tap on the same cell: assign
                 armedCell = nil
                 self:SetBackdropBorderColor(1, 0.82, 0, 0)
                 HideEntryTooltip()
                 AssignEntry(self.entry)
-            elseif armedCell ~= self then
-                -- no hover fired this tap: arm it directly
+            else
+                -- first tap: arm it
                 if armedCell then
                     armedCell:SetBackdropBorderColor(1, 0.82, 0, 0)
-                    armedCell.wasArmed = false
                 end
                 armedCell = self
                 self:SetBackdropBorderColor(1, 0.82, 0, 0.9)
-                self.wasArmed = true
                 ShowEntryTooltip(self, self.entry)
             end
         end)

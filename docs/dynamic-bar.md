@@ -121,15 +121,15 @@ spellbook). Every `Requires` line is logged
 be tuned from data. Results cached by spell name; rejected spells log as
 `name(stance)`.
 
-**Picker rows are tap-tap**: the first touch/tap shows the tooltip and arms
-the cell (gold outline), the second tap on the same cell assigns. `OnEnter`
-(which fires on every touch before `OnClick` on this client) records whether
-the cell was already armed and re-arms it, so `OnClick` can tell a first tap
-from a second tap even when the first tap's `OnClick` is missed (the
-first-open quirk — the first picker open after login used to need three
-taps). Tapping a different row re-arms it; armed state + tooltip reset on
-dismiss. Every cell click is logged (`cell click btn=… wasArmed=… entry=…`)
-for tuning.
+**Picker rows are tap-tap**: the first tap shows the tooltip and arms the
+cell (gold outline), the second tap on the same cell assigns. Keyed purely
+on `OnClick` (which fires on every tap on this client — verified in the
+debug ring) with `armedCell == self` as the discriminator. `OnEnter` only
+shows the tooltip on hover; it does **not** arm, because `OnEnter` fires
+only on the first touch per open and cannot be relied on for the arm state
+(an earlier `wasArmed`-in-`OnEnter` design failed exactly this way). Tapping
+a different row re-arms it; armed state + tooltip reset on dismiss. Every
+cell click is logged (`cell click btn=… armed=… entry=…`) for tuning.
 Spellbook scan order: `GetSpellBookItemName` (documented) → `GetSpellName`
 → `GetSpellBookItemInfo`+`GetSpellInfo` (undocumented last resort). A debug
 line reports which path ran and the candidate counts
