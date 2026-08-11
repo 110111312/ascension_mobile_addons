@@ -66,10 +66,10 @@ local PITCH_GAP      = 4
 local STRIP_MARGIN   = 8   -- gap after the bag button
 local STRIP_END_MARG = 8   -- gap before the player frame
 
--- Picker: 3 category columns (Items / Spells / Mounts), each a 2-wide grid
--- of compact rows. No scrolling — the frame height adapts to the tallest
--- column (cell height shrinks if a category is long).
-local MENU_W       = 520
+-- Picker: 4 category columns (Items / Spells / Mounts / Professions), each
+-- a 2-wide grid of compact rows. No scrolling — the frame height adapts to
+-- the tallest column (cell height shrinks if a category is long).
+local MENU_W       = 692  -- 4 cols x 160 + 3 gaps x 8 + 2 x 14 padding
 local MENU_H_MAX   = 460
 local COL_W        = 160
 local COL_GAP      = 8
@@ -83,8 +83,9 @@ local GROUP_NAMES = {
     item  = "Items",
     spell = "Spells",
     mount = "Mounts",
+    prof  = "Professions",
 }
-local GROUP_ORDER = { "item", "spell", "mount" }
+local GROUP_ORDER = { "item", "spell", "mount", "prof" }
 
 MobileUIDynamicBar = {}
 
@@ -182,27 +183,35 @@ local function SpellRequiresStance(spellbookID, sname)
                 local t = (r:GetText() or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("^%s+", "")
                 local req = t:match("^Requires%s*:?%s*(.+)$")
                 if req then
+                    -- "Requires Enchanting (350)" — a profession rank
+                    -- requirement, not a stance. Keep (profession spells are
+                    -- handled by the profession detection, not this filter).
+                    local hasRank = req:match("%(%d+%)") ~= nil
                     req = req:gsub("%s*%(.+%)%s*$", ""):gsub("[%.%s]+$", "")
-                    -- "X or Y" lists (e.g. "Runeshroud or Waveforged"): every
-                    -- part must be stance-like (single word / keyword, not
-                    -- "level N", not "a/an <item>").
-                    local allStance = req:match("%S") ~= nil
-                    for part in (req:gsub("%s+or%s+", "|")):gmatch("[^|]+") do
-                        local rl = part:lower()
-                        local core = part:gsub("^[Tt]he%s+", "")
-                        local singleWord = not core:match("%s")
-                        if rl:match("level") or rl:match("^a[n]?%s")
-                           or not (rl:match("stealth") or rl:match("form") or rl:match("stance") or singleWord) then
-                            allStance = false
-                            break
+                    if hasRank then
+                        MobileUI_Debug(string.format("DynamicBar: stance-scan: %s requires '%s' (rank) -> keep", sname, req))
+                    else
+                        -- "X or Y" lists (e.g. "Runeshroud or Waveforged"): every
+                        -- part must be stance-like (single word / keyword, not
+                        -- "level N", not "a/an <item>").
+                        local allStance = req:match("%S") ~= nil
+                        for part in (req:gsub("%s+or%s+", "|")):gmatch("[^|]+") do
+                            local rl = part:lower()
+                            local core = part:gsub("^[Tt]he%s+", "")
+                            local singleWord = not core:match("%s")
+                            if rl:match("level") or rl:match("^a[n]?%s")
+                               or not (rl:match("stealth") or rl:match("form") or rl:match("stance") or singleWord) then
+                                allStance = false
+                                break
+                            end
                         end
+                        if allStance then
+                            requires = true
+                            MobileUI_Debug(string.format("DynamicBar: stance-scan: %s requires '%s' -> FILTER", sname, req))
+                            return
+                        end
+                        MobileUI_Debug(string.format("DynamicBar: stance-scan: %s requires '%s' -> keep", sname, req))
                     end
-                    if allStance then
-                        requires = true
-                        MobileUI_Debug(string.format("DynamicBar: stance-scan: %s requires '%s' -> FILTER", sname, req))
-                        return
-                    end
-                    MobileUI_Debug(string.format("DynamicBar: stance-scan: %s requires '%s' -> keep", sname, req))
                 end
             end
         end
@@ -215,8 +224,88 @@ local function SpellRequiresStance(spellbookID, sname)
     return requires
 end
 
+-- Profession detection: GetProfessions() + GetProfessionInfo() return each
+-- profession's exact spellbook range (spellOffset..spellOffset+numSpells-1).
+-- The first spell in the range is the profession skill itself (e.g.
+-- "Enchanting" — clicking it opens the profession window); the rest are
+-- sub-skills (Disenchant). Recipes are NOT in the spellbook (they live in
+-- the profession window), so the range is small and clean.
+-- Fallback if these APIs are stripped (like IsTradeSkill): a non-General tab
+-- whose spells carry a "Requires <X> (rank)" tooltip line is a profession
+-- tab — all its spells are profession spells.
+local profRankCache = {}
+local function SpellHasProfessionRank(spellbookID)
+    if profRankCache[spellbookID] ~= nil then return profRankCache[spellbookID] end
+    local found = false
+    if GameTooltip and GameTooltip.SetSpell then
+        local ok = pcall(function()
+            GameTooltip:SetOwner(UIParent, "ANCHOR_NONE")
+            GameTooltip:SetSpell(spellbookID, "spell")
+            for _, r in ipairs({ GameTooltip:GetRegions() }) do
+                if r and r.GetText and r:GetObjectType() == "FontString" then
+                    local t = (r:GetText() or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("^%s+", "")
+                    if t:match("^Requires%s*:?%s+.+%(%d+%)") then
+                        found = true
+                        break
+                    end
+                end
+            end
+        end)
+        GameTooltip:Hide()
+        if not ok then
+            MobileUI_Debug("DynamicBar: prof-rank scan ERROR: " .. tostring(err))
+        end
+    end
+    profRankCache[spellbookID] = found
+    return found
+end
+
+local function GetProfessionRanges()
+    local ranges = {}  -- [spellbookIndex] = professionName
+    local ok = false
+    if GetProfessions then
+        local p1, _, _, p2, _, _, arch = GetProfessions()
+        local seen = {}
+        for _, p in ipairs({ p1, p2, arch }) do
+            if p and not seen[p] then
+                seen[p] = true
+                local name, _, rank, maxRank, numSpells, offset =
+                    GetProfessionInfo and GetProfessionInfo(p)
+                if name and offset and numSpells then
+                    ok = true
+                    for i = offset + 1, offset + numSpells do
+                        ranges[i] = name
+                    end
+                    MobileUI_Debug(string.format(
+                        "DynamicBar: profession %s (rank %s/%s) offset=%s num=%s",
+                        name, tostring(rank), tostring(maxRank), offset, numSpells))
+                end
+            end
+        end
+    end
+    if not ok then
+        MobileUI_Debug("DynamicBar: professions API stripped — tooltip tab fallback")
+        local nt = GetNumSpellTabs() or 0
+        for tab = 2, nt do
+            local tname, _, offset, num = GetSpellTabInfo(tab)
+            if tname and offset and num then
+                local isProf = false
+                for i = offset + 1, offset + num do
+                    if SpellHasProfessionRank(i) then isProf = true break end
+                end
+                if isProf then
+                    for i = offset + 1, offset + num do ranges[i] = tname end
+                    MobileUI_Debug(string.format(
+                        "DynamicBar: profession tab %s (offset=%s num=%s)", tname, offset, num))
+                end
+            end
+        end
+    end
+    return ranges
+end
+
 local function BuildEntries()
-    local items, spells, mounts = {}, {}, {}
+    local items, spells, mounts, profs = {}, {}, {}, {}
     -- --- Usable bag items (any item with a "Use:" effect), deduped by id ---
     local seen = {}
     for c = 0, 4 do
@@ -254,11 +343,11 @@ local function BuildEntries()
         buffSet[name] = dur or 0
     end
     local rejected   = {}
+    local profRanges = GetProfessionRanges()
     local spellNameFn = GetSpellBookItemName or GetSpellName
     -- Scan ALL tabs: on Ascension the buffs live on custom tabs
-    -- (Engravement / Glyphic / Riftblade), not just General. Recipes are
-    -- handled by the per-spell filters below (IsTradeSkill is stripped, so
-    -- the per-spell dump is how we'll identify them).
+    -- (Engravement / Glyphic / Riftblade), not just General. Profession
+    -- spells are tagged via GetProfessionRanges() and bypass the filters.
     local nt = GetNumSpellTabs() or 0
     local tabNames = {}
     for tab = 1, nt do
@@ -282,35 +371,44 @@ local function BuildEntries()
                 end
             end
             if sname then
-                local passive = IsPassiveSpell and IsPassiveSpell(i, "spell")
-                local attack  = IsAttackSpell and IsAttackSpell(i, "spell")
-                local harmful = IsHarmfulSpell and IsHarmfulSpell(i, "spell")
-                local trade   = IsTradeSkill and IsTradeSkill(i, "spell")
+                local profName = profRanges[i]
                 local keep    = true
                 local why     = nil
-                if passive then keep, why = false, "passive" end
-                if attack  then keep, why = false, "attack"  end
-                if harmful then keep, why = false, "harmful" end
-                -- NOTE: IsHelpfulSpell returns nil (not false) for harmful
-                -- spells AND for weapon enchants (Weapon Engraving, Palm
-                -- Sigil: Fire) on this client, so it can't be used as a
-                -- filter — IsHarmfulSpell above is the correct discriminator
-                -- (harmful spells have hrm=1, weapon enchants hrm=nil).
-                -- Profession recipes (trade skills) are not bar-worthy.
-                if trade then keep, why = false, "trade" end
-                local kind = nil
-                if keep then
-                    local btype = GetSpellBookItemInfo and select(1, GetSpellBookItemInfo(i, "spell"))
-                    kind = (btype == "MOUNT" or sname:find("Mount", 1, true)) and "mount" or "spell"
-                    -- The General tab is mostly racials/toggles/teleports;
-                    -- keep only mounts and the Resurrect teleports from it.
-                    if tab == 1 and kind ~= "mount" and not sname:find("Resurrect", 1, true) then
-                        keep, why = false, "general"
-                    end
-                    -- Stance/stealth-required spells (Palm Sigil needs
-                    -- Stealth) are useless on a tap bar.
-                    if keep and SpellRequiresStance(i, sname) then
-                        keep, why = false, "stance"
+                local kind    = nil
+                if profName then
+                    -- Profession spells are explicitly wanted: bypass the
+                    -- candidate filters (the skill may read as passive, and
+                    -- sub-skills carry "Requires <prof> (rank)" which the
+                    -- stance filter would otherwise drop).
+                    kind = "prof"
+                else
+                    local passive = IsPassiveSpell and IsPassiveSpell(i, "spell")
+                    local attack  = IsAttackSpell and IsAttackSpell(i, "spell")
+                    local harmful = IsHarmfulSpell and IsHarmfulSpell(i, "spell")
+                    local trade   = IsTradeSkill and IsTradeSkill(i, "spell")
+                    if passive then keep, why = false, "passive" end
+                    if attack  then keep, why = false, "attack"  end
+                    if harmful then keep, why = false, "harmful" end
+                    -- NOTE: IsHelpfulSpell returns nil (not false) for harmful
+                    -- spells AND for weapon enchants (Weapon Engraving, Palm
+                    -- Sigil: Fire) on this client, so it can't be used as a
+                    -- filter — IsHarmfulSpell above is the correct discriminator
+                    -- (harmful spells have hrm=1, weapon enchants hrm=nil).
+                    -- Profession recipes (trade skills) are not bar-worthy.
+                    if trade then keep, why = false, "trade" end
+                    if keep then
+                        local btype = GetSpellBookItemInfo and select(1, GetSpellBookItemInfo(i, "spell"))
+                        kind = (btype == "MOUNT" or sname:find("Mount", 1, true)) and "mount" or "spell"
+                        -- The General tab is mostly racials/toggles/teleports;
+                        -- keep only mounts and the Resurrect teleports from it.
+                        if tab == 1 and kind ~= "mount" and not sname:find("Resurrect", 1, true) then
+                            keep, why = false, "general"
+                        end
+                        -- Stance/stealth-required spells (Palm Sigil needs
+                        -- Stealth) are useless on a tap bar.
+                        if keep and SpellRequiresStance(i, sname) then
+                            keep, why = false, "stance"
+                        end
                     end
                 end
                 if keep then
@@ -318,8 +416,15 @@ local function BuildEntries()
                         kind = kind, spellbookID = i, name = sname,
                         icon = GetSpellTexture and GetSpellTexture(i, "spell"),
                         dur  = buffSet[sname] or 0,
+                        prof = profName,
                     }
-                    table.insert(kind == "mount" and mounts or spells, entry)
+                    if kind == "prof" then
+                        table.insert(profs, entry)
+                    elseif kind == "mount" then
+                        table.insert(mounts, entry)
+                    else
+                        table.insert(spells, entry)
+                    end
                 else
                     table.insert(rejected, string.format("%s(%s)", sname, why))
                 end
@@ -329,19 +434,21 @@ local function BuildEntries()
     end
     table.sort(spells, function(a, b) return a.name < b.name end)
     table.sort(mounts, function(a, b) return a.name < b.name end)
+    table.sort(profs, function(a, b) return a.name < b.name end)
     local keptNames = {}
     for _, e in ipairs(spells) do table.insert(keptNames, e.name) end
     for _, e in ipairs(mounts) do table.insert(keptNames, e.name .. "[mount]") end
+    for _, e in ipairs(profs) do table.insert(keptNames, e.name .. "[prof]") end
     MobileUI_Debug(string.format(
-        "DynamicBar: spell scan (bookname=%s bookinfo=%s) %d checked -> %d candidates (%d spells, %d mounts)",
+        "DynamicBar: spell scan (bookname=%s bookinfo=%s) %d checked -> %d candidates (%d spells, %d mounts, %d profs)",
         tostring(GetSpellBookItemName ~= nil), tostring(GetSpellBookItemInfo ~= nil),
-        checked, #spells + #mounts, #spells, #mounts))
+        checked, #spells + #mounts + #profs, #spells, #mounts, #profs))
     MobileUI_Debug("DynamicBar: kept: " .. table.concat(keptNames, ", "))
     if #rejected > 0 then
         MobileUI_Debug("DynamicBar: candidate-rejected: " .. table.concat(rejected, ", "))
     end
     local out = {}
-    for _, t in ipairs({ items, spells, mounts }) do
+    for _, t in ipairs({ items, spells, mounts, profs }) do
         for _, e in ipairs(t) do table.insert(out, e) end
     end
     return out
@@ -508,7 +615,7 @@ local function CreateMenu()
     closeBtn:SetText("X")
     closeBtn:SetScript("OnClick", ClosePicker)
 
-    -- 3 category columns: header + pooled cells.
+    -- 4 category columns: header + pooled cells.
     for ci, kind in ipairs(GROUP_ORDER) do
         local col = { cells = {} }
         col.header = menu:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -531,7 +638,7 @@ end
 -- Fill the category columns from the current entries. Cell height adapts so
 -- the tallest column fits the frame (no scrolling).
 local function PopulateColumns()
-    local byKind = { item = {}, spell = {}, mount = {} }
+    local byKind = { item = {}, spell = {}, mount = {}, prof = {} }
     for _, e in ipairs(entries) do
         local t = byKind[e.kind]
         if t then table.insert(t, e) end

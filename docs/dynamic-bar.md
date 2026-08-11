@@ -66,7 +66,7 @@ A `Button` with `RegisterForClicks("RightButtonDown", ...)` received **no mouse 
 ## Picker
 
 A **column layout** (no scrolling) — one column per category, each a 2-wide
-grid of compact rows (icon + name), in a wide frame (520px) whose height
+grid of compact rows (icon + name), in a wide frame (692px) whose height
 adapts to the tallest column (cell height shrinks if a category is long):
 
 - **Items** — usable bag items (any item with a "Use:" effect,
@@ -80,6 +80,19 @@ adapts to the tallest column (cell height shrinks if a category is long):
 - **Mounts** — split out of the spell scan via the book type (`"MOUNT"`)
   or a name heuristic (Ascension's custom mount spells report book type
   `"SPELL"`, so names containing `Mount` are classified as mounts).
+- **Professions** — the player's profession skills and sub-skills
+  (e.g. **Enchanting** — clicking it opens the enchanting window — and
+  **Disenchant**). Detected by **filter, not whitelist**:
+  `GetProfessions()` + `GetProfessionInfo()` return each profession's exact
+  spellbook range (`spellOffset`..`spellOffset+numSpells-1`); the first spell
+  in the range is the profession skill, the rest are sub-skills. Recipes are
+  **not** in the spellbook (they live in the profession window), so the
+  range is small and clean. Profession spells **bypass the candidate
+  filters** (the skill may read as passive, and sub-skills carry
+  `Requires <prof> (rank)` which the stance filter would otherwise drop).
+  If `GetProfessions`/`GetProfessionInfo` are stripped on this client, a
+  fallback tags any non-General tab whose spells show a
+  `Requires <X> (rank)` tooltip line as a profession tab.
 
 **Filtering reality on this client:** `IsHelpfulSpell`, `IsHarmfulSpell`,
 `IsAttackSpell` and `IsPassiveSpell` all **exist and work**; `IsTradeSkill`
@@ -116,7 +129,9 @@ requirement when X is a **skill name**: single word (or `the <word>`), not
 `level N`, not `a/an <item>` — plus the `Stealth`/`Form`/`Stance` keywords
 (case-insensitive). This catches custom Ascension stances like
 `Requires Moonshroud` (the class stealth skill, which isn't even in the
-spellbook). Every `Requires` line is logged
+spellbook). A `Requires X (rank)` line (numeric rank in parens) is a
+**profession** requirement, not a stance — it's kept (profession spells are
+handled by the profession detection). Every `Requires` line is logged
 (`stance-scan: <spell> requires '<x>' -> FILTER/keep`) so the heuristic can
 be tuned from data. Results cached by spell name; rejected spells log as
 `name(stance)`.
@@ -212,8 +227,10 @@ All `DynamicBar:` lines go to the `MobileUIDebugLog` ring buffer (view with
   = the first-open bug regressed)
 - `assigned item/spell '…' to btn N (slot N)` + `slot N now type=… id=…` —
   assignment result + verification
-- `spell tabs: …` / `N candidates (X spells, Y mounts)` / `kept: …` /
+- `spell tabs: …` / `N candidates (X spells, Y mounts, Z profs)` / `kept: …` /
   `candidate-rejected: …` — spell scan summary
+- `profession <name> (rank r/m) offset=… num=…` — profession detection
+  (or `professions API stripped — tooltip tab fallback` + `profession tab …`)
 - `stance-scan: <spell> requires '<x>' -> FILTER/keep` — stance heuristic
 - `tooltip ERROR: …` / `OpenPicker ERROR: …` — pcall-trapped failures
 
@@ -237,6 +254,10 @@ All `DynamicBar:` lines go to the `MobileUIDebugLog` ring buffer (view with
 7. **Strip size** — the `applied 6 button(s) size=…` log line shows whether
    the 64px target fit or shrank; adjust the window or `TARGET_SIZE` if the
    size looks off.
+8. **Profession detection** — the log shows `profession Enchanting (rank …)
+   offset=… num=…` (or the tooltip-tab fallback). The picker's Professions
+   column lists the skill + sub-skills; assigning the skill and tapping it
+   opens the profession window.
 
 The debug ring (`MobileUIDebugLog` SavedVariable, on disk after `/reload`
 or logout) is the source of truth — no chat prints.
