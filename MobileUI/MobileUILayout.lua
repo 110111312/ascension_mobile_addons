@@ -271,6 +271,16 @@ local function SaveOriginals()
     -- ChatFrame1: original position, so layout revert restores it exactly
     local cf = _G["ChatFrame1"]
     if cf then saved.chatFrame = { points = SavePoints(cf) } end
+    -- SpellBookFrame: original anchor points + scale + OnShow script, so
+    -- layout revert restores the stock position/size/behavior exactly.
+    local sb = _G["SpellBookFrame"]
+    if sb then
+        saved.spellbook = {
+            points = SavePoints(sb),
+            scale = sb:GetScale(),
+            onShow = sb:GetScript("OnShow"),
+        }
+    end
     -- Save shown state + anchor points of the bottom-left bar's tail buttons
     -- (6-12). The bar is horizontal and its buttons are anchor-chained (each
     -- LEFT of the previous button's RIGHT), so buttons 6-12 chain off the
@@ -1234,6 +1244,48 @@ local function RevertPartyFrames()
     end
 end
 
+-- 5c. Spell Book → centered, scaled to fit the screen
+-- Stock 3.3.5a SpellBookFrame is 600x700 anchored TOPLEFT of UIParent (this
+-- Ascension client renders it bottom-left). Centered on the 1128x634
+-- UIParent it would overflow ~33 units top and bottom (the top tab row would
+-- clip), so it is also scaled to fit the screen height with a small margin.
+-- The frame is a plain (non-secure) movable frame, so ClearAllPoints/SetPoint/
+-- SetScale are safe out of combat. The OnShow hook re-asserts the position
+-- when the book opens, in case the client re-anchors it on show; the original
+-- OnShow (tab update + open sound) is preserved and called first.
+local function ApplySpellBook()
+    local sb = _G["SpellBookFrame"]
+    if not sb then
+        MobileUI_Debug("ApplySpellBook: SpellBookFrame NOT FOUND")
+        return
+    end
+    local h = sb:GetHeight() or 700
+    local screenH = UIParent:GetHeight() or 634
+    local scale = math.min(1, (screenH - 40) / h)
+    sb:SetScale(scale)
+    sb:ClearAllPoints()
+    sb:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    local orig = saved.spellbook and saved.spellbook.onShow
+    sb:SetScript("OnShow", function(self)
+        if orig then pcall(orig, self) end
+        if MobileDB and MobileDB.layoutEnabled then
+            self:SetScale(scale)
+            self:ClearAllPoints()
+            self:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+        end
+    end)
+    MobileUI_Debug("ApplySpellBook: SpellBookFrame centered (scale=" .. scale .. ")")
+end
+local function RevertSpellBook()
+    local sb = _G["SpellBookFrame"]
+    local sv = saved.spellbook
+    if not sb or not sv then return end
+    sb:SetScale(sv.scale)
+    RestorePoints(sb, sv.points)
+    sb:SetScript("OnShow", sv.onShow)
+    MobileUI_Debug("RevertSpellBook: SpellBookFrame restored")
+end
+
 -- 6. Chat Frame: lift it so its "to newest" scroll button sits just above
 -- the chat bubble (which itself sits just above the bag icon).
 -- 3.3.5 FrameXML geometry: the scroll-button strip (ChatFrame1ButtonFrame) is
@@ -1536,6 +1588,7 @@ function MobileUILayout:Apply()
     step("ApplyActionBar", ApplyActionBar)
     step("ApplyPlayerFrame", ApplyPlayerFrame)
     step("ApplyPartyFrames", ApplyPartyFrames)
+    step("ApplySpellBook", ApplySpellBook)
     step("ApplyChatFrame", ApplyChatFrame)
     step("ApplyHideFrames", ApplyHideFrames)
     -- Dynamic action bar (bottom-left strip): runs after the tail is parked
@@ -1564,6 +1617,7 @@ function MobileUILayout:Revert()
     RevertActionBar()
     RevertPlayerFrame()
     RevertPartyFrames()
+    RevertSpellBook()
     RevertChatFrame()
     MobileUIWorldMap:Revert()
     MobileUI_Debug("Layout reverted.")
