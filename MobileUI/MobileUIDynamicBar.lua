@@ -273,6 +273,25 @@ local function ClosePicker()
     if menu then menu:Hide() end
 end
 
+-- This client strips SetClipsChildren (like SetVerticalScroll and
+-- SetObeyStepOnDrag), so the viewport can't clip. Rows/headers outside the
+-- visible area are hidden manually instead.
+local function UpdateRowVisibility(offset)
+    local viewH = math.max(100, (menu:GetHeight() or MENU_H) - 44 - 12)
+    for k, r in ipairs(rowPool) do
+        if r:IsShown() and r.rowY then
+            local y = r.rowY
+            if y + ROW_H < offset or y > offset + viewH then r:Hide() else r:Show() end
+        end
+    end
+    for k, h in ipairs(headerPool) do
+        if h:IsShown() and h.headerY then
+            local y = h.headerY
+            if y + HEADER_H < offset or y > offset + viewH then h:Hide() else h:Show() end
+        end
+    end
+end
+
 local function CreateMenu()
     if menu then menu:Hide() end -- a partial menu from an aborted build
     menu = CreateFrame("Frame", "MobileUIDynamicBarMenu", UIParent)
@@ -327,7 +346,9 @@ local function CreateMenu()
     viewport = CreateFrame("Frame", nil, menu)
     viewport:SetPoint("TOPLEFT", menu, "TOPLEFT", 14, -44)
     viewport:SetPoint("BOTTOMRIGHT", menu, "BOTTOMRIGHT", -30, 12)
-    viewport:SetClipsChildren(true)
+    -- SetClipsChildren is stripped on this client; rows are hidden manually
+    -- via UpdateRowVisibility instead.
+    if viewport.SetClipsChildren then viewport:SetClipsChildren(true) end
     content = CreateFrame("Frame", nil, viewport)
     content:SetWidth(MENU_W - 14 - 30)
     content:SetPoint("TOPLEFT", viewport, "TOPLEFT", 0, 0)
@@ -341,6 +362,7 @@ local function CreateMenu()
     scrollBar:SetScript("OnValueChanged", function(self, value)
         content:ClearAllPoints()
         content:SetPoint("TOPLEFT", viewport, "TOPLEFT", 0, value)
+        UpdateRowVisibility(value)
     end)
     viewport:EnableMouseWheel(true)
     viewport:SetScript("OnMouseWheel", function(self, delta)
@@ -422,11 +444,13 @@ local function RebuildList()
             h:ClearAllPoints()
             h:SetPoint("TOPLEFT", content, "TOPLEFT", 4, -y)
             h:SetPoint("TOPRIGHT", content, "TOPRIGHT", -4, -y)
+            h.headerY = y
             y = y + HEADER_H
         end
         local r = GetRow()
         r:ClearAllPoints()
         r:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -y)
+        r.rowY = y
         r:SetWidth(content:GetWidth())
         r.entry = entry
         r.icon:SetTexture(entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
@@ -448,6 +472,7 @@ local function RebuildList()
     scrollBar:SetValue(0)
     content:ClearAllPoints()
     content:SetPoint("TOPLEFT", viewport, "TOPLEFT", 0, 0)
+    UpdateRowVisibility(0)
 end
 
 local function OpenPicker(btnIndex)
