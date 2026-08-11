@@ -25,8 +25,9 @@ stock spot.
 3. **Re-asserts on show** — the frame's `OnShow` is replaced with a wrapper
    that first calls the original `OnShow` (preserved in `SaveOriginals`, so
    tab updates + open sound still run) and then re-applies the center + scale
-   while the layout is enabled. This covers clients that re-anchor the book
-   when it opens.
+   while the layout is enabled. A one-shot timer re-asserts again ~0.25s after
+   show, covering clients that re-anchor the book in the open function
+   *after* `Show()` returns (by then `OnShow` has already run).
 
 `RevertSpellBook` restores the saved anchor points, scale, and original
 `OnShow` script.

@@ -1252,31 +1252,53 @@ end
 -- The frame is a plain (non-secure) movable frame, so ClearAllPoints/SetPoint/
 -- SetScale are safe out of combat. The OnShow hook re-asserts the position
 -- when the book opens, in case the client re-anchors it on show; the original
--- OnShow (tab update + open sound) is preserved and called first.
+-- OnShow (tab update + open sound) is preserved and called first. A one-shot
+-- timer re-asserts again ~0.25s after show, covering clients that re-anchor
+-- the book in the open function AFTER Show() returns (OnShow already ran).
+local spellBookTimer
+local function CenterSpellBook(sb, scale)
+    sb:SetScale(scale)
+    sb:ClearAllPoints()
+    sb:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+end
 local function ApplySpellBook()
     local sb = _G["SpellBookFrame"]
     if not sb then
         MobileUI_Debug("ApplySpellBook: SpellBookFrame NOT FOUND")
         return
     end
-    local h = sb:GetHeight() or 700
+    local h = sb:GetHeight()
+    if not h or h <= 0 then h = 700 end
     local screenH = UIParent:GetHeight() or 634
     local scale = math.min(1, (screenH - 40) / h)
-    sb:SetScale(scale)
-    sb:ClearAllPoints()
-    sb:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    CenterSpellBook(sb, scale)
     local orig = saved.spellbook and saved.spellbook.onShow
     sb:SetScript("OnShow", function(self)
         if orig then pcall(orig, self) end
         if MobileDB and MobileDB.layoutEnabled then
-            self:SetScale(scale)
-            self:ClearAllPoints()
-            self:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+            CenterSpellBook(self, scale)
+            if not spellBookTimer then
+                spellBookTimer = CreateFrame("Frame")
+                spellBookTimer:SetScript("OnUpdate", function(self, el)
+                    self._t = (self._t or 0) + el
+                    if self._t >= 0.25 then
+                        self._t = 0
+                        if MobileDB and MobileDB.layoutEnabled then
+                            local f = _G["SpellBookFrame"]
+                            if f then CenterSpellBook(f, scale) end
+                        end
+                        self:Hide()
+                    end
+                end)
+            end
+            spellBookTimer._t = 0
+            spellBookTimer:Show()
         end
     end)
     MobileUI_Debug("ApplySpellBook: SpellBookFrame centered (scale=" .. scale .. ")")
 end
 local function RevertSpellBook()
+    if spellBookTimer then spellBookTimer:Hide() end
     local sb = _G["SpellBookFrame"]
     local sv = saved.spellbook
     if not sb or not sv then return end
