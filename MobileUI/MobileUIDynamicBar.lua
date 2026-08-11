@@ -83,20 +83,6 @@ local GROUP_NAMES = {
 }
 local GROUP_ORDER = { "item", "spell", "mount" }
 
--- Attack spells on this character that IsHarmfulSpell (stripped on this
--- client) would normally reject. Exact-name blacklist — a stopgap until a
--- working harmful-spell API is found. Range can't be used as a signal:
--- buffs castable on friendly targets have large ranges too.
-local HARMFUL_NAMES = {
-    ["Auto Attack"] = true,
-    ["Throw"] = true,
-    ["Wand"] = true,
-    ["Runeblade"] = true,
-    ["Cryobrand"] = true,
-    ["Elemental Burst"] = true,
-    ["Primordial Blast"] = true,
-}
-
 MobileUIDynamicBar = {}
 
 local usedButtons = {}   -- [btnIndex] = true while the strip is active
@@ -244,6 +230,21 @@ local function BuildEntries()
                 local helpful = IsHelpfulSpell and IsHelpfulSpell(i, "spell")
                 local harmful = IsHarmfulSpell and IsHarmfulSpell(i, "spell")
                 local trade   = IsTradeSkill and IsTradeSkill(i, "spell")
+                -- Per-spell diagnostic: dump every classification signal so
+                -- we can find what separates attack spells from buffs on
+                -- this client (Ascension has 3x classes — a blacklist can't
+                -- cover them). gi4..gi9 are the raw GetSpellInfo returns so
+                -- we also learn its real return order here.
+                local btype, sid = GetSpellBookItemInfo and GetSpellBookItemInfo(i, "spell")
+                local g1, g2, g3, g4, g5, g6, g7, g8, g9 = GetSpellInfo(i, "spell")
+                MobileUI_Debug(string.format(
+                    "DynamicBar: spell: %s | type=%s hlp=%s hrm=%s atk=%s pas=%s trd=%s | gi4=%s gi5=%s gi6=%s gi7=%s gi8=%s gi9=%s | sid=%s",
+                    sname, tostring(btype),
+                    tostring(helpful), tostring(harmful), tostring(attack),
+                    tostring(passive), tostring(trade),
+                    tostring(g4), tostring(g5), tostring(g6),
+                    tostring(g7), tostring(g8), tostring(g9),
+                    tostring(sid)))
                 local keep    = true
                 local why     = nil
                 if passive then keep, why = false, "passive" end
@@ -253,9 +254,6 @@ local function BuildEntries()
                 if helpful == false then keep, why = false, "nothelpful" end
                 -- Profession recipes (trade skills) are not bar-worthy.
                 if trade then keep, why = false, "trade" end
-                -- Fallback when IsHarmfulSpell is stripped: exact-name
-                -- blacklist of known attack spells on this character.
-                if keep and HARMFUL_NAMES[sname] then keep, why = false, "harmful" end
                 if keep then
                     local btype = GetSpellBookItemInfo and select(1, GetSpellBookItemInfo(i, "spell"))
                     local kind = (btype == "MOUNT" or sname:find("Mount", 1, true)) and "mount" or "spell"
