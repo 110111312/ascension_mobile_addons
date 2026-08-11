@@ -183,11 +183,21 @@ local function SpellRequiresStance(spellbookID, sname)
                 local req = t:match("^Requires%s*:?%s*(.+)$")
                 if req then
                     req = req:gsub("%s*%(.+%)%s*$", ""):gsub("[%.%s]+$", "")
-                    local rl = req:lower()
-                    local core = req:gsub("^[Tt]he%s+", "")
-                    local singleWord = not core:match("%s")
-                    if rl:match("stealth") or rl:match("form") or rl:match("stance")
-                       or (not rl:match("level") and not rl:match("^a[n]?%s") and singleWord) then
+                    -- "X or Y" lists (e.g. "Runeshroud or Waveforged"): every
+                    -- part must be stance-like (single word / keyword, not
+                    -- "level N", not "a/an <item>").
+                    local allStance = req:match("%S") ~= nil
+                    for part in (req:gsub("%s+or%s+", "|")):gmatch("[^|]+") do
+                        local rl = part:lower()
+                        local core = part:gsub("^[Tt]he%s+", "")
+                        local singleWord = not core:match("%s")
+                        if rl:match("level") or rl:match("^a[n]?%s")
+                           or not (rl:match("stealth") or rl:match("form") or rl:match("stance") or singleWord) then
+                            allStance = false
+                            break
+                        end
+                    end
+                    if allStance then
                         requires = true
                         MobileUI_Debug(string.format("DynamicBar: stance-scan: %s requires '%s' -> FILTER", sname, req))
                         return
@@ -432,28 +442,47 @@ local function GetCell(kind, n)
             insets = { left = 1, right = 1, top = 1, bottom = 1 },
         })
         cell:SetBackdropBorderColor(1, 0.82, 0, 0)
-        -- Tap-tap: first tap shows the tooltip and arms the cell, second tap
-        -- on the same cell assigns. Keyed on OnMouseDown (button-DOWN) — the
-        -- down is more reliable than the up on a flaky phone connection, and
-        -- the first tap after the menu opens was observed to miss OnClick.
-        cell:SetScript("OnMouseDown", function(self, button)
-            if not self.entry or button ~= "LeftButton" then return end
-            if armedCell == self then
+        -- Tap-tap: the first touch/tap shows the tooltip and arms the cell
+        -- (gold border); the second tap on the same cell assigns. OnEnter
+        -- (which fires on every touch before OnClick on this client) records
+        -- whether the cell was already armed and re-arms it, so OnClick can
+        -- tell a first tap from a second tap even when the first tap's
+        -- OnClick is missed (the first-open quirk). OnMouseDown is not used
+        -- for the arm/assign decision (it would double-fire with OnClick).
+        cell:SetScript("OnEnter", function(self)
+            if not self.entry then return end
+            self.wasArmed = (armedCell == self)
+            if armedCell and armedCell ~= self then
+                armedCell:SetBackdropBorderColor(1, 0.82, 0, 0)
+                armedCell.wasArmed = false
+            end
+            armedCell = self
+            self:SetBackdropBorderColor(1, 0.82, 0, 0.9)
+            ShowEntryTooltip(self, self.entry)
+        end)
+        cell:SetScript("OnClick", function(self, button)
+            MobileUI_Debug(string.format("DynamicBar: cell click btn=%s wasArmed=%s entry=%s",
+                tostring(button), tostring(self.wasArmed),
+                self.entry and self.entry.name or "nil"))
+            if not self.entry then return end
+            if self.wasArmed then
+                -- armed by a previous tap: assign
+                self.wasArmed = false
                 armedCell = nil
                 self:SetBackdropBorderColor(1, 0.82, 0, 0)
                 HideEntryTooltip()
                 AssignEntry(self.entry)
-            else
+            elseif armedCell ~= self then
+                -- no hover fired this tap: arm it directly
                 if armedCell then
                     armedCell:SetBackdropBorderColor(1, 0.82, 0, 0)
+                    armedCell.wasArmed = false
                 end
                 armedCell = self
                 self:SetBackdropBorderColor(1, 0.82, 0, 0.9)
+                self.wasArmed = true
                 ShowEntryTooltip(self, self.entry)
             end
-        end)
-        cell:SetScript("OnEnter", function(self)
-            if self.entry then ShowEntryTooltip(self, self.entry) end
         end)
         cell:SetScript("OnLeave", HideEntryTooltip)
         col.cells[n] = cell
