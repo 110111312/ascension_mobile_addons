@@ -60,33 +60,41 @@ A `Button` with `RegisterForClicks("RightButtonDown", ...)` received **no mouse 
 
 ## Picker
 
-A **scrollable list** (no paging) grouped by category, in a larger frame
-(340×460, clamped to screen, height adapts to the window):
+A **column layout** (no scrolling) — one column per category, each a 2-wide
+grid of compact rows (icon + name), in a wide frame (520px) whose height
+adapts to the tallest column (cell height shrinks if a category is long):
 
 - **Items** — usable bag items (any item with a "Use:" effect,
   `GetItemSpell(link) ~= nil`), deduped by item ID, showing icon + stack count.
 - **Spells** — known spells filtered to *helpful* (`IsHelpfulSpell`, usable
   on player/friendly) minus attack spells (`IsAttackSpell`) minus passives
-  (`IsPassiveSpell`). **No keep/drop filter** — every candidate shows,
-  sorted alphabetically. Active buffs show remaining time (e.g. `12m`).
+  (`IsPassiveSpell`) minus **trade-skill recipes** (`IsTradeSkill`). **No
+  keep/drop filter** — every candidate shows, sorted alphabetically. Active
+  buffs show remaining time (e.g. `12m`).
 - **Mounts** — split out of the spell scan via `GetSpellBookItemInfo`'s book
   type (`"MOUNT"` vs `"SPELL"`).
 
-Each row: small icon (26px) + name + count/duration. Scroll via the
-scrollbar or mouse wheel. Spellbook scan order: `GetSpellBookItemName`
-(documented) → `GetSpellName` → `GetSpellBookItemInfo`+`GetSpellInfo`
-(undocumented last resort). A debug line reports which path ran and the
-candidate counts (`N candidates (X spells, Y mounts)`), plus a
-`candidate-rejected:` line with the reason (`passive`/`attack`/`nothelpful`)
-for tuning.
+Each row: small icon (20px) + name + count/duration. Tap a row to assign,
+hold a row for its tooltip (global `GameTooltip`, pcall-wrapped), hover works
+on desktop. Spellbook scan order: `GetSpellBookItemName` (documented) →
+`GetSpellName` → `GetSpellBookItemInfo`+`GetSpellInfo` (undocumented last
+resort). A debug line reports which path ran and the candidate counts
+(`N candidates (X spells, Y mounts)`), plus a `candidate-rejected:` line with
+the reason (`passive`/`attack`/`nothelpful`/`trade`) for tuning.
+
+> **Why no scrolling?** This Ascension client strips the scroll primitives
+> (`ScrollFrame:SetVerticalScroll`, `Slider:SetObeyStepOnDrag`,
+> `Frame:SetClipsChildren` — verified in-game, like
+> `GameTooltip:GetNumTooltipLines`), and scrolling is poor UX on a phone
+> stream anyway. The column layout shows everything at once.
 
 > **Why no duration filter?** 3.3.5 has no spell-duration API, and this
 > Ascension client has **no tooltip line-reading API either**
 > (`GetNumTooltipLines` is nil on both the global and addon-created tooltips
 > — verified in-game), so duration can't be read at all. The picker shows
-> every helpful non-passive non-attack spell; remaining time is shown only
-> for buffs currently active on the player (UnitBuff gives the exact
-> duration).
+> every helpful non-passive non-attack non-trade spell; remaining time is
+> shown only for buffs currently active on the player (UnitBuff gives the
+> exact duration).
 
 Spells assign as plain spell slots: clicking casts at the current target
 (stock behavior). Target-required buffs (Blessing-type) need a target or an
