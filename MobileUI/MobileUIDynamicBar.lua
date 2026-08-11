@@ -162,6 +162,7 @@ local function BuildEntries()
     local spellNameFn = GetSpellBookItemName or GetSpellName
     local nt = GetNumSpellTabs() or 0
     local checked = 0
+    local keptNames = {}
     for tab = 1, nt do
         local _, _, offset, num = GetSpellTabInfo(tab)
         if offset and num then
@@ -191,15 +192,16 @@ local function BuildEntries()
                             buff = buffSet[sname] ~= nil,
                             dur  = buffSet[sname] or 0,
                         })
+                        table.insert(keptNames, sname)
                     end
                 end
             end
         end
     end
     MobileUI_Debug(string.format(
-        "DynamicBar: spell scan (bookname=%s bookinfo=%s) %d checked -> %d kept (helpful/non-attack/non-passive)",
+        "DynamicBar: spell scan (bookname=%s bookinfo=%s) %d checked -> %d kept: %s",
         tostring(GetSpellBookItemName ~= nil), tostring(GetSpellBookItemInfo ~= nil),
-        checked, #spells))
+        checked, #spells, table.concat(keptNames, ", ")))
     table.sort(spells, function(a, b)
         if a.buff ~= b.buff then return a.buff and not b.buff end
         return a.name < b.name
