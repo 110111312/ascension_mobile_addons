@@ -68,19 +68,39 @@ adapts to the tallest column (cell height shrinks if a category is long):
   `GetItemSpell(link) ~= nil`), deduped by item ID, showing icon + stack count.
 - **Spells** — known spells filtered to *helpful* (`IsHelpfulSpell`, usable
   on player/friendly) minus attack spells (`IsAttackSpell`) minus passives
-  (`IsPassiveSpell`) minus **trade-skill recipes** (`IsTradeSkill`). **No
-  keep/drop filter** — every candidate shows, sorted alphabetically. Active
-  buffs show remaining time (e.g. `12m`).
-- **Mounts** — split out of the spell scan via `GetSpellBookItemInfo`'s book
-  type (`"MOUNT"` vs `"SPELL"`).
+  (`IsPassiveSpell`) minus harmful (`IsHarmfulSpell`) minus **trade-skill
+  recipes**. **No keep/drop filter** — every candidate shows, sorted
+  alphabetically. Active buffs show remaining time (e.g. `12m`).
+- **Mounts** — split out of the spell scan via the book type (`"MOUNT"`)
+  or a name heuristic (Ascension's custom mount spells report book type
+  `"SPELL"`, so names containing `Mount` are classified as mounts).
+
+**Filtering reality on this client:** `IsHelpfulSpell`, `IsHarmfulSpell` and
+`IsTradeSkill` are **stripped** (nil) on Ascension — the log's
+`spell APIs:` line reports which exist. The filters that depend on them
+silently no-op, so two fallbacks keep the list clean:
+
+- **Range fallback** — attack spells (Throw, Wand, Runeblade, …) have a
+  range; self-buffs don't. Spells with `maxRange > 0` are rejected
+  (`ranged`). `GetSpellInfo`'s return order differs between references, so
+  maxRange is read from either position (6th on 3.3.5, 9th on the 9-return
+  form).
+- **General-tab-only scan** — only spellbook tab 1 (General) is scanned;
+  profession recipes live on their own tabs, so they never enter the picker.
+  The log's `spell tabs:` line lists every tab name + count to verify.
 
 Each row: small icon (20px) + name + count/duration. Tap a row to assign,
-hold a row for its tooltip (global `GameTooltip`, pcall-wrapped), hover works
-on desktop. Spellbook scan order: `GetSpellBookItemName` (documented) →
+hold a row for its tooltip (global `GameTooltip`, pcall-wrapped, anchored to
+**the cell** — anchoring to the 520px menu would push it off-screen on a
+phone). Spellbook scan order: `GetSpellBookItemName` (documented) →
 `GetSpellName` → `GetSpellBookItemInfo`+`GetSpellInfo` (undocumented last
-resort). A debug line reports which path ran and the candidate counts
-(`N candidates (X spells, Y mounts)`), plus a `candidate-rejected:` line with
-the reason (`passive`/`attack`/`nothelpful`/`trade`) for tuning.
+resort). The tooltip's global spellID comes from `GetSpellBookItemInfo`'s
+2nd return (unambiguous), not `GetSpellInfo` (its return order differs
+between references). A debug line reports which path ran and the candidate
+counts (`N candidates (X spells, Y mounts)`), a `kept:` line lists every
+kept spell (mounts marked `[mount]`), and a `candidate-rejected:` line gives
+the reason (`passive`/`attack`/`harmful`/`nothelpful`/`trade`/`ranged`) for
+tuning.
 
 > **Why no scrolling?** This Ascension client strips the scroll primitives
 > (`ScrollFrame:SetVerticalScroll`, `Slider:SetObeyStepOnDrag`,

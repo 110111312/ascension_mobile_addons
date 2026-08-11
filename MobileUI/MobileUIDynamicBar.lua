@@ -183,8 +183,9 @@ local function BuildEntries()
     end
     -- --- Spells + mounts ---------------------------------------------------
     -- Candidates: helpful (usable on player/friendly) minus attack spells
-    -- minus passives. Mounts are split out via GetSpellBookItemInfo's book
-    -- type ("MOUNT" vs "SPELL").
+    -- minus passives minus trade skills. Mounts are split out via the book
+    -- type ("MOUNT") or a name heuristic (Ascension's custom mount spells
+    -- report book type "SPELL").
     local buffSet = {}
     for i = 1, 40 do
         -- UnitBuff: name, rank, icon, count, dispelType, DURATION, ...
@@ -195,60 +196,93 @@ local function BuildEntries()
     end
     local rejected   = {}
     local spellNameFn = GetSpellBookItemName or GetSpellName
+    -- Only the General tab (tab 1) is scanned: profession recipes live on
+    -- their own tabs and IsTradeSkill is stripped on this client, so this is
+    -- the reliable way to keep recipes out of the picker.
     local nt = GetNumSpellTabs() or 0
-    local checked = 0
+    local tabNames = {}
     for tab = 1, nt do
-        local _, _, offset, num = GetSpellTabInfo(tab)
-        if offset and num then
-            for i = offset + 1, offset + num do
-                checked = checked + 1
-                local sname = spellNameFn and spellNameFn(i, "spell")
-                if not sname and GetSpellBookItemInfo then
-                    -- Last resort (undocumented in the local reference, but
-                    -- SpellBookFrame uses it on stock 3.3.5).
-                    local stype, sid = GetSpellBookItemInfo(i, "spell")
-                    if stype == "SPELL" and sid then
-                        sname = select(1, GetSpellInfo(sid))
-                    end
+        local tname, _, _, tnum = GetSpellTabInfo(tab)
+        table.insert(tabNames, string.format("%s(%s)", tname or "?", tostring(tnum)))
+    end
+    MobileUI_Debug("DynamicBar: spell tabs: " .. table.concat(tabNames, ", "))
+    MobileUI_Debug(string.format(
+        "DynamicBar: spell APIs: helpful=%d harmful=%d attack=%d trade=%d passive=%d",
+        IsHelpfulSpell and 1 or 0, IsHarmfulSpell and 1 or 0,
+        IsAttackSpell and 1 or 0, IsTradeSkill and 1 or 0, IsPassiveSpell and 1 or 0))
+    local checked = 0
+    local _, _, offset, num = GetSpellTabInfo(1)
+    if offset and num then
+        for i = offset + 1, offset + num do
+            checked = checked + 1
+            local sname = spellNameFn and spellNameFn(i, "spell")
+            if not sname and GetSpellBookItemInfo then
+                -- Last resort (undocumented in the local reference, but
+                -- SpellBookFrame uses it on stock 3.3.5).
+                local stype, sid = GetSpellBookItemInfo(i, "spell")
+                if stype == "SPELL" and sid then
+                    sname = select(1, GetSpellInfo(sid))
                 end
-                if sname then
-                    local passive = IsPassiveSpell and IsPassiveSpell(i, "spell")
-                    local attack  = IsAttackSpell and IsAttackSpell(i, "spell")
-                    local helpful = IsHelpfulSpell and IsHelpfulSpell(i, "spell")
-                    local trade   = IsTradeSkill and IsTradeSkill(i, "spell")
-                    local keep    = true
-                    local why     = nil
-                    if passive then keep, why = false, "passive" end
-                    if attack  then keep, why = false, "attack"  end
-                    -- Restrict to friendly-target spells only when the API exists.
-                    if helpful == false then keep, why = false, "nothelpful" end
-                    -- Profession recipes (trade skills) are not bar-worthy.
-                    if trade then keep, why = false, "trade" end
-                    if keep then
-                        local btype = GetSpellBookItemInfo and select(1, GetSpellBookItemInfo(i, "spell"))
-                        local kind = (btype == "MOUNT") and "mount" or "spell"
-                        local entry = {
-                            kind = kind, spellbookID = i, name = sname,
-                            icon = GetSpellTexture and GetSpellTexture(i, "spell"),
-                            dur  = buffSet[sname] or 0,
-                        }
-                        -- Global spellID for the tooltip (GetSpellInfo accepts
-                        -- the book form on 3.3.5).
-                        entry.spellID = select(7, GetSpellInfo(i, "spell"))
-                        table.insert(kind == "mount" and mounts or spells, entry)
-                    else
-                        table.insert(rejected, string.format("%s(%s)", sname, why))
+            end
+            if sname then
+                local passive = IsPassiveSpell and IsPassiveSpell(i, "spell")
+                local attack  = IsAttackSpell and IsAttackSpell(i, "spell")
+                local helpful = IsHelpfulSpell and IsHelpfulSpell(i, "spell")
+                local harmful = IsHarmfulSpell and IsHarmfulSpell(i, "spell")
+                local trade   = IsTradeSkill and IsTradeSkill(i, "spell")
+                local keep    = true
+                local why     = nil
+                if passive then keep, why = false, "passive" end
+                if attack  then keep, why = false, "attack"  end
+                if harmful then keep, why = false, "harmful" end
+                -- Restrict to friendly-target spells only when the API exists.
+                if helpful == false then keep, why = false, "nothelpful" end
+                -- Profession recipes (trade skills) are not bar-worthy.
+                if trade then keep, why = false, "trade" end
+                -- Fallback when the helpful/harmful APIs are stripped: attack
+                -- spells (Throw, Wand, ...) have a range; self-buffs don't.
+                -- GetSpellInfo's return order differs between references, so
+                -- read maxRange from either position (6th on 3.3.5, 9th on
+                -- the 9-return form) and take whichever is present.
+                if keep then
+                    local _, _, _, _, _, mrA, _, mrB, mrC = GetSpellInfo(i, "spell")
+                    local maxRange = mrC or mrA
+                    if maxRange and maxRange > 0 then keep, why = false, "ranged" end
+                end
+                if keep then
+                    local btype = GetSpellBookItemInfo and select(1, GetSpellBookItemInfo(i, "spell"))
+                    local kind = (btype == "MOUNT" or sname:find("Mount", 1, true)) and "mount" or "spell"
+                    local entry = {
+                        kind = kind, spellbookID = i, name = sname,
+                        icon = GetSpellTexture and GetSpellTexture(i, "spell"),
+                        dur  = buffSet[sname] or 0,
+                    }
+                    -- Global spellID for the tooltip: prefer the book-info id
+                    -- (unambiguous); GetSpellInfo's return order differs
+                    -- between references, so don't rely on it.
+                    if GetSpellBookItemInfo then
+                        entry.spellID = select(2, GetSpellBookItemInfo(i, "spell"))
                     end
+                    if not entry.spellID then
+                        entry.spellID = select(7, GetSpellInfo(i, "spell"))
+                    end
+                    table.insert(kind == "mount" and mounts or spells, entry)
+                else
+                    table.insert(rejected, string.format("%s(%s)", sname, why))
                 end
             end
         end
     end
     table.sort(spells, function(a, b) return a.name < b.name end)
     table.sort(mounts, function(a, b) return a.name < b.name end)
+    local keptNames = {}
+    for _, e in ipairs(spells) do table.insert(keptNames, e.name) end
+    for _, e in ipairs(mounts) do table.insert(keptNames, e.name .. "[mount]") end
     MobileUI_Debug(string.format(
         "DynamicBar: spell scan (bookname=%s bookinfo=%s) %d checked -> %d candidates (%d spells, %d mounts)",
         tostring(GetSpellBookItemName ~= nil), tostring(GetSpellBookItemInfo ~= nil),
         checked, #spells + #mounts, #spells, #mounts))
+    MobileUI_Debug("DynamicBar: kept: " .. table.concat(keptNames, ", "))
     if #rejected > 0 then
         MobileUI_Debug("DynamicBar: candidate-rejected: " .. table.concat(rejected, ", "))
     end
@@ -262,10 +296,13 @@ end
 -- Tooltip preview: hold (right button) on a cell shows the entry's tooltip;
 -- release hides it. Also fires on hover for desktop. Uses the global
 -- GameTooltip (the addon-created one lacks template methods on this client).
-local function ShowEntryTooltip(entry)
+local function ShowEntryTooltip(cell, entry)
     if not entry then return end
     local ok, err = pcall(function()
-        GameTooltip:SetOwner(menu, "ANCHOR_RIGHT")
+        -- Anchor to the cell, not the menu: the menu is 520px wide near the
+        -- left edge, so ANCHOR_RIGHT of the menu would push the tooltip
+        -- off-screen on a phone.
+        GameTooltip:SetOwner(cell or menu, "ANCHOR_RIGHT")
         if entry.kind == "item" then
             if entry.c and entry.s then
                 GameTooltip:SetBagItem(entry.c, entry.s)
@@ -313,13 +350,16 @@ local function GetCell(kind, n)
             if self.entry then AssignEntry(self.entry) end
         end)
         cell:SetScript("OnMouseDown", function(self, button)
-            if button == "RightButton" and self.entry then ShowEntryTooltip(self.entry) end
+            if button == "RightButton" and self.entry then
+                MobileUI_Debug("DynamicBar: cell down btn=" .. tostring(button))
+                ShowEntryTooltip(self, self.entry)
+            end
         end)
         cell:SetScript("OnMouseUp", function(self, button)
             if button == "RightButton" then HideEntryTooltip() end
         end)
         cell:SetScript("OnEnter", function(self)
-            if self.entry then ShowEntryTooltip(self.entry) end
+            if self.entry then ShowEntryTooltip(self, self.entry) end
         end)
         cell:SetScript("OnLeave", HideEntryTooltip)
         col.cells[n] = cell
@@ -389,6 +429,7 @@ local function CreateMenu()
     clickCatcher = CreateFrame("Frame", "MobileUIDynamicBarCatcher", UIParent)
     clickCatcher:SetAllPoints(UIParent)
     clickCatcher:SetFrameStrata("DIALOG")
+    clickCatcher:EnableMouse(true)
     clickCatcher:SetScript("OnMouseDown", ClosePicker)
     menuReady = true
 end
