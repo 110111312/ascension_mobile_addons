@@ -75,32 +75,35 @@ adapts to the tallest column (cell height shrinks if a category is long):
   or a name heuristic (Ascension's custom mount spells report book type
   `"SPELL"`, so names containing `Mount` are classified as mounts).
 
-**Filtering reality on this client:** `IsHelpfulSpell`, `IsHarmfulSpell` and
-`IsTradeSkill` are **stripped** (nil) on Ascension — the log's
-`spell APIs:` line reports which exist. The filters that depend on them
-silently no-op, so two fallbacks keep the list clean:
+**Filtering reality on this client (from the per-spell dump):**
+`IsHelpfulSpell`, `IsHarmfulSpell`, `IsAttackSpell` and `IsPassiveSpell` all
+**exist and work**; `IsTradeSkill` is stripped (nil). Two quirks matter:
 
-- **Harmful blacklist** — an exact-name blacklist of known attack spells on
-  this character (Auto Attack, Throw, Wand, Runeblade, Cryobrand, Elemental
-  Burst, Primordial Blast) rejects them as `harmful`. A stopgap until a
-  working harmful-spell API is found. Range is deliberately **not** used as
-  a signal: buffs castable on friendly targets have large ranges too.
-- **General-tab-only scan** — only spellbook tab 1 (General) is scanned;
-  profession recipes live on their own tabs, so they never enter the picker.
-  The log's `spell tabs:` line lists every tab name + count to verify.
+- **Harmful spells return `nil` (not `false`) from `IsHelpfulSpell`** — so
+  the helpful filter must be `not helpful`, not `helpful == false`.
+  `IsHarmfulSpell` also works and rejects them (`harmful`).
+- **All tabs are scanned** — on Ascension the buffs live on custom tabs
+  (Engravement / Glyphic / Riftblade), not just General. The log's
+  `spell tabs:` line lists every tab name + count.
+
+Recipes: `IsTradeSkill` is stripped, so they can't be filtered by API yet.
+The per-spell dump (`DynamicBar: spell: <name> | type=… hlp=… hrm=… …`)
+logs every checked spell's classification signals so a real recipe filter
+can be derived from data instead of guessed.
 
 Each row: small icon (20px) + name + count/duration. Tap a row to assign,
 hold a row for its tooltip (global `GameTooltip`, pcall-wrapped, anchored to
 **the cell** — anchoring to the 520px menu would push it off-screen on a
 phone). Spellbook scan order: `GetSpellBookItemName` (documented) →
 `GetSpellName` → `GetSpellBookItemInfo`+`GetSpellInfo` (undocumented last
-resort). The tooltip's global spellID comes from `GetSpellBookItemInfo`'s
-2nd return (unambiguous), not `GetSpellInfo` (its return order differs
-between references). A debug line reports which path ran and the candidate
-counts (`N candidates (X spells, Y mounts)`), a `kept:` line lists every
-kept spell (mounts marked `[mount]`), and a `candidate-rejected:` line gives
-the reason (`passive`/`attack`/`harmful`/`nothelpful`/`trade`/`ranged`) for
-tuning.
+resort). The tooltip uses `GameTooltip:SetSpellBookItem(spellbookID, "spell")`
+— `GetSpellBookItemInfo`'s 2nd return (spellID) is nil on this client and
+`GetSpellInfo` has no spellID return (9-value form: …castingTime, minRange,
+maxRange), so `SetSpellByID` can't work. A debug line reports which path ran
+and the candidate counts (`N candidates (X spells, Y mounts)`), a `kept:`
+line lists every kept spell (mounts marked `[mount]`), and a
+`candidate-rejected:` line gives the reason
+(`passive`/`attack`/`harmful`/`nothelpful`/`trade`) for tuning.
 
 > **Why no scrolling?** This Ascension client strips the scroll primitives
 > (`ScrollFrame:SetVerticalScroll`, `Slider:SetObeyStepOnDrag`,

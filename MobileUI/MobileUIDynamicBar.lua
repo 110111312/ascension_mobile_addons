@@ -196,9 +196,10 @@ local function BuildEntries()
     end
     local rejected   = {}
     local spellNameFn = GetSpellBookItemName or GetSpellName
-    -- Only the General tab (tab 1) is scanned: profession recipes live on
-    -- their own tabs and IsTradeSkill is stripped on this client, so this is
-    -- the reliable way to keep recipes out of the picker.
+    -- Scan ALL tabs: on Ascension the buffs live on custom tabs
+    -- (Engravement / Glyphic / Riftblade), not just General. Recipes are
+    -- handled by the per-spell filters below (IsTradeSkill is stripped, so
+    -- the per-spell dump is how we'll identify them).
     local nt = GetNumSpellTabs() or 0
     local tabNames = {}
     for tab = 1, nt do
@@ -211,9 +212,10 @@ local function BuildEntries()
         IsHelpfulSpell and 1 or 0, IsHarmfulSpell and 1 or 0,
         IsAttackSpell and 1 or 0, IsTradeSkill and 1 or 0, IsPassiveSpell and 1 or 0))
     local checked = 0
-    local _, _, offset, num = GetSpellTabInfo(1)
-    if offset and num then
-        for i = offset + 1, offset + num do
+    for tab = 1, nt do
+        local _, _, offset, num = GetSpellTabInfo(tab)
+        if offset and num then
+            for i = offset + 1, offset + num do
             checked = checked + 1
             local sname = spellNameFn and spellNameFn(i, "spell")
             if not sname and GetSpellBookItemInfo then
@@ -251,7 +253,10 @@ local function BuildEntries()
                 if attack  then keep, why = false, "attack"  end
                 if harmful then keep, why = false, "harmful" end
                 -- Restrict to friendly-target spells only when the API exists.
-                if helpful == false then keep, why = false, "nothelpful" end
+                -- NOTE: harmful spells return nil (not false) from
+                -- IsHelpfulSpell on this client, so `not helpful` is the
+                -- correct check.
+                if IsHelpfulSpell and not helpful then keep, why = false, "nothelpful" end
                 -- Profession recipes (trade skills) are not bar-worthy.
                 if trade then keep, why = false, "trade" end
                 if keep then
@@ -262,21 +267,13 @@ local function BuildEntries()
                         icon = GetSpellTexture and GetSpellTexture(i, "spell"),
                         dur  = buffSet[sname] or 0,
                     }
-                    -- Global spellID for the tooltip: prefer the book-info id
-                    -- (unambiguous); GetSpellInfo's return order differs
-                    -- between references, so don't rely on it.
-                    if GetSpellBookItemInfo then
-                        entry.spellID = select(2, GetSpellBookItemInfo(i, "spell"))
-                    end
-                    if not entry.spellID then
-                        entry.spellID = select(7, GetSpellInfo(i, "spell"))
-                    end
                     table.insert(kind == "mount" and mounts or spells, entry)
                 else
                     table.insert(rejected, string.format("%s(%s)", sname, why))
                 end
             end
         end
+    end
     end
     table.sort(spells, function(a, b) return a.name < b.name end)
     table.sort(mounts, function(a, b) return a.name < b.name end)
@@ -303,6 +300,8 @@ end
 -- GameTooltip (the addon-created one lacks template methods on this client).
 local function ShowEntryTooltip(cell, entry)
     if not entry then return end
+    MobileUI_Debug(string.format("DynamicBar: tooltip kind=%s sbi=%s",
+        entry.kind, tostring(GameTooltip.SetSpellBookItem ~= nil)))
     local ok, err = pcall(function()
         -- Anchor to the cell, not the menu: the menu is 520px wide near the
         -- left edge, so ANCHOR_RIGHT of the menu would push the tooltip
@@ -314,8 +313,15 @@ local function ShowEntryTooltip(cell, entry)
             else
                 GameTooltip:SetItemByID(entry.id)
             end
-        elseif entry.spellID then
-            GameTooltip:SetSpellByID(entry.spellID)
+        elseif entry.spellbookID then
+            -- GetSpellBookItemInfo's 2nd return (spellID) is nil on this
+            -- client and GetSpellInfo has no spellID return, so SetSpellByID
+            -- can't work — use the book-slot form instead.
+            if GameTooltip.SetSpellBookItem then
+                GameTooltip:SetSpellBookItem(entry.spellbookID, "spell")
+            elseif entry.spellID then
+                GameTooltip:SetSpellByID(entry.spellID)
+            end
         end
         GameTooltip:Show()
     end)
