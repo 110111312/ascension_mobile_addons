@@ -119,7 +119,7 @@
                 </Scripts>
             </CheckButton>
 
-            <CheckButton name="$parentBagSwapCheck" inherits="OptionsCheckButtonTemplate">
+            <CheckButton name="$parentTapEquipCheck" inherits="OptionsCheckButtonTemplate">
                 <Anchors>
                     <Anchor point="TOPLEFT" relativeTo="$parentTapBuyCheck" relativePoint="BOTTOMLEFT">
                         <Offset><AbsDimension x="0" y="-8"/></Offset>
@@ -127,7 +127,23 @@
                 </Anchors>
                 <Scripts>
                     <OnLoad>
-                        _G[self:GetName().."Text"]:SetText("Bag Swap Menu (hold a bag to pick its slot)")
+                        _G[self:GetName().."Text"]:SetText("Tap = Equip (tap armor/weapons to equip them out of combat)")
+                    </OnLoad>
+                    <OnClick>
+                        MobileUI_OptionsOnTapEquipChanged(self:GetChecked())
+                    </OnClick>
+                </Scripts>
+            </CheckButton>
+
+            <CheckButton name="$parentBagSwapCheck" inherits="OptionsCheckButtonTemplate">
+                <Anchors>
+                    <Anchor point="TOPLEFT" relativeTo="$parentTapEquipCheck" relativePoint="BOTTOMLEFT">
+                        <Offset><AbsDimension x="0" y="-8"/></Offset>
+                    </Anchor>
+                </Anchors>
+                <Scripts>
+                    <OnLoad>
+                        _G[self:GetName().."Text"]:SetText("Bag Swap Menu (tap or hold a bag to pick its slot)")
                     </OnLoad>
                     <OnClick>
                         MobileUI_OptionsOnBagSwapChanged(self:GetChecked())

@@ -993,6 +993,13 @@ end
 -- ActionButton_Update from calling self:Show()/self:Hide() on our tainted
 -- buttons mid-combat.
 
+-- Gated so the ring buffer isn't flooded: ACTIONBAR_* events fire many
+-- times per second, and logging each one pushes every other module's
+-- diagnostics out of the 500-entry buffer within seconds. Only log when
+-- the resolved page actually changes.
+local lastFlipLog = ""
+local lastFlipAttrLog = ""
+
 function MobileUILayout.ApplyFlip()
     if not MobileDB or not MobileDB.layoutEnabled then return end
     -- The actionpage ATTRIBUTE is now owned by the SecureStateDriver bridge
@@ -1010,12 +1017,20 @@ function MobileUILayout.ApplyFlip()
         local off = GetBonusBarOffset() or 0
         if off > 0 then fp = (NUM_ACTIONBAR_PAGES or 6) + off end
     end
-    MobileUI_Debug(string.format("Flip: page=%d off=%d fp=%d combat=%d",
-        page, GetBonusBarOffset() or 0, fp, InCombatLockdown() and 1 or 0))
+    local logStr = string.format("Flip: page=%d off=%d fp=%d combat=%d",
+        page, GetBonusBarOffset() or 0, fp, InCombatLockdown() and 1 or 0)
+    if logStr ~= lastFlipLog then
+        lastFlipLog = logStr
+        MobileUI_Debug(logStr)
+    end
     RefreshScatterButtons()
     local b1 = _G["ActionButton1"]
     if b1 then
-        MobileUI_Debug("Flip: attr1=" .. tostring(SecureButton_GetModifiedAttribute(b1, "actionpage")))
+        local attrLog = "Flip: attr1=" .. tostring(SecureButton_GetModifiedAttribute(b1, "actionpage"))
+        if attrLog ~= lastFlipAttrLog then
+            lastFlipAttrLog = attrLog
+            MobileUI_Debug(attrLog)
+        end
     end
 end
 

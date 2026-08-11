@@ -21,7 +21,8 @@ local DEFAULTS = {
     tapInteract  = true,  -- true = left click on world acts like right click (interact)
     tapSell      = true,  -- true = tap a bag item to sell while a vendor is open
     tapBuy       = true,  -- true = tap a merchant item to buy it directly
-    bagSwap      = true,  -- true = hold a bag when all slots are full to pick its slot
+    tapEquip     = true,  -- true = tap an equippable item (armor/weapon) to equip it
+    bagSwap      = true,  -- true = tap/hold a bag to pick which slot it goes into
 }
 
 -- ============================================================================
@@ -97,7 +98,7 @@ function core:PLAYER_ENTERING_WORLD()
     if MobileDB.tapBuy then
         MobileUIBuy:Apply()
     end
-    if MobileDB.bagSwap then
+    if MobileDB.bagSwap or MobileDB.tapEquip then
         MobileUIBagSwap:Apply()
     end
     if MobileDB.layoutEnabled then
@@ -210,7 +211,13 @@ SlashCmdList["MOBILEUI"] = function(msg)
         local enabled = MobileUIBagSwap:Toggle()
         print("|cff00ccff[MobileUI]|r Bag Swap Menu " ..
             (enabled and "ON" or "OFF") ..
-            " (hold a bag with no free slots to pick which slot it goes into).")
+            " (tap or hold a bag to pick which slot it goes into).")
+
+    elseif cmd == "equiptap" then
+        local enabled = MobileUIBagSwap:ToggleEquip()
+        print("|cff00ccff[MobileUI]|r Tap = Equip " ..
+            (enabled and "ON" or "OFF") ..
+            " (tap armor/weapons to equip them out of combat).")
 
     else
         print("|cff00ccff[MobileUI]|r Scale: 1.2 (fixed; minimap 1.25)" ..
@@ -220,8 +227,9 @@ SlashCmdList["MOBILEUI"] = function(msg)
             " | tap: " .. (MobileDB.tapInteract and "on" or "off") ..
             " | sell: " .. (MobileDB.tapSell and "on" or "off") ..
             " | buy: " .. (MobileDB.tapBuy and "on" or "off") ..
+            " | equiptap: " .. (MobileDB.tapEquip and "on" or "off") ..
             " | bagswap: " .. (MobileDB.bagSwap and "on" or "off"))
-        print("|cff00ccff[MobileUI]|r Usage: /mui chat | /mui look <10-90> | /mui layout | /mui tap | /mui sell | /mui buy | /mui bagswap | /mui debug | /mui debugclear")
+        print("|cff00ccff[MobileUI]|r Usage: /mui chat | /mui look <10-90> | /mui layout | /mui tap | /mui sell | /mui buy | /mui equiptap | /mui bagswap | /mui debug | /mui debugclear")
     end
 end
 
@@ -241,6 +249,8 @@ function MobileUI_OptionsOnShow(panel)
     if sellCheck then sellCheck:SetChecked(MobileDB.tapSell) end
     local buyCheck = _G[name .. "TapBuyCheck"]
     if buyCheck then buyCheck:SetChecked(MobileDB.tapBuy) end
+    local equipCheck = _G[name .. "TapEquipCheck"]
+    if equipCheck then equipCheck:SetChecked(MobileDB.tapEquip) end
     local bagSwapCheck = _G[name .. "BagSwapCheck"]
     if bagSwapCheck then bagSwapCheck:SetChecked(MobileDB.bagSwap) end
 end
@@ -288,6 +298,16 @@ function MobileUI_OptionsOnTapBuyChanged(checked)
         MobileUIBuy:Apply()
     else
         MobileUIBuy:Revert()
+    end
+end
+
+function MobileUI_OptionsOnTapEquipChanged(checked)
+    if not MobileDB then return end
+    MobileDB.tapEquip = checked and true or false
+    if MobileDB.tapEquip then
+        MobileUIBagSwap:Apply()
+    else
+        MobileUIBagSwap:Revert()
     end
 end
 

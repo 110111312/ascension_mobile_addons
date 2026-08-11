@@ -1,59 +1,63 @@
--- MobileUIBagSwap.lua - Bag swap menu on hold (Phase 8)
+-- MobileUIBagSwap.lua - Pickup = Action: sell / equip / bag-swap
 --
--- Problem: stock right-click on a bag item only equips into a FREE bag slot.
--- When all 4 bag slots are occupied and full, right-clicking a bag item fails
--- with "This item cannot be equipped" — and the mobile layout hides the bags
--- bar, so there is no per-slot button to drag the bag onto either. The player
--- can never replace an old small bag with a new bigger one.
+-- Problem: stock right-click on a bag item only equips into a FREE bag slot
+-- and in this client errors "This item cannot be equipped" even with a free
+-- slot — and the mobile layout hides the bags bar, so there is no per-slot
+-- button to drag the bag onto either. The player can never replace an old
+-- small bag with a new bigger one. Tap = Sell and Tap = Equip also need a
+-- tap gesture the stock left-click does not provide.
 --
--- Fix: when a bag item is held (right-click, Artemis hold gesture) we own
--- the gesture and swap it into a chosen bag slot. With exactly one empty
--- bag slot the swap runs immediately; otherwise a small menu lists the
--- empty bag slots (name, size, free slots) and tapping one swaps there.
--- The swap is PickupContainerItem + PickupInventoryItem (the exchange),
--- with the old bag auto-placed back into the source slot.
+-- Fix: we NEVER touch ContainerFrameItemButton_OnClick. The stock global
+-- stays pristine for the whole session — in-game testing proved this is the
+-- ONLY thing that keeps hold-to-use (right-click a hearthstone/potion)
+-- clean: on a fresh session the hold uses the item fine, but after ONE
+-- wrapper install/remove cycle on that global the same hold errors "AddOn
+-- 'MobileUI' tainted the call of the secure function 'UseItemByName()'"
+-- even with the wrapper fully restored/removed at hold time. securecall()
+-- does not help (meaningless from addon code) and addon-initiated :Click()
+-- taints too. So the wrapper idea is dead.
 --
--- Trigger scope (intentional): we always own the hold-of-bag gesture —
--- stock right-click never equips bags in this client (verified in-game:
--- "This item cannot be equipped" even with a free slot), so there is no
--- fast path to preserve. While a merchant is open we defer entirely (the
--- tap=sell wrapper owns bag clicks there — hold still sells, per its docs).
+-- Instead, taps are left to do their stock thing — a tap PICKS THE ITEM UP —
+-- and a per-frame poll watches the cursor. On an empty-cursor -> item
+-- transition it checks GetMouseFocus(): if the pickup came from a container
+-- slot, the item's kind decides the action, all via direct API calls that
+-- are clean in this client (PickupContainerItem is not taint-checked;
+-- UseContainerItem's SELL path — merchant open — and EQUIP path are not
+-- protected — only its USE path is, which we never touch):
 --
--- Taint safety: the stock container-item handler can reach the protected
--- UseContainerItem (right-click "Use:" items, e.g. hearthstone/potions), so
--- MobileUI code must never sit on that call stack. Every pass-through runs
--- through securecall() in a clean protected stack. The wrapper is installed
--- once and stays for the session; disabling the feature (MobileDB.bagSwap)
--- only turns interception off, so it stays robust against MobileUISell
--- wrapping/unwrapping the same global on merchant open/close.
+--   * vendor open + tapSell     -> return item to its slot + UseContainerItem -> sold
+--   * bag + bagSwap             -> swap menu / direct swap (bag already on cursor)
+--   * equippable + tapEquip, out of combat -> return + UseContainerItem -> equipped
+--   * anything else             -> nothing; item stays on the cursor (stock)
 --
--- Controls: default on. Toggle: /mui bagswap. Interface Options -> MobileUI
--- -> "Bag Swap Menu". Saved var: MobileDB.bagSwap.
+-- Hold-to-use is deliberately untouched: with no wrapper ever on the stack,
+-- a hold on a "Use:" item runs the stock handler cleanly. The item-use
+-- mechanism is built separately (docs/tap-use.md). A hold on a BAG still
+-- shows the stock "This item cannot be equipped" message — tap is the bag
+-- gesture now. Moving armor requires tapEquip off (tap then picks it up).
+--
+-- Controls: default on. Toggle: /mui bagswap, /mui equiptap, /mui sell.
+-- Interface Options -> MobileUI -> "Bag Swap Menu" / "Tap = Equip".
+-- Saved vars: MobileDB.bagSwap, MobileDB.tapEquip, MobileDB.tapSell.
 
 local ADDON = "MobileUI"
 
 MobileUIBagSwap = {}
 
--- Wrapper state (installed once at Apply, kept for the session)
-local installed = false
-local enabled   = false
-local origClick -- the handler we replaced (stock, or whatever was current)
-
 -- Menu state
 local menu, menuTitle, clickCatcher
 local menuRows = {}
-local source   -- { container = containerID, slot = slotIndex } of the held bag
+local source   -- { container = containerID, slot = slotIndex } of the picked-up bag
 
 -- ============================================================================
 -- Helpers
 -- ============================================================================
 
--- Is the item in this container slot a bag? 3.3.5's GetItemInfo returns
--- class as a LOCALIZED STRING ("Container"), not the numeric id — so we
--- accept the string, the numeric id (some clients), and the locale-
--- independent equipSlot token ("INVTYPE_BAG") as three independent signals.
-local function IsBagItem(container, slot)
-    local link = GetContainerItemLink(container, slot)
+-- Is this item a bag? 3.3.5's GetItemInfo returns class as a LOCALIZED
+-- STRING ("Container"), not the numeric id — so we accept the string, the
+-- numeric id (some clients), and the locale-independent equipSlot token
+-- ("INVTYPE_BAG") as three independent signals.
+local function IsBag(link)
     if not link then return false end
     local _, _, _, _, _, class, _, _, equipSlot = GetItemInfo(link)
     if not class then return false end
@@ -61,7 +65,7 @@ local function IsBagItem(container, slot)
 end
 
 -- Per-slot state for the debug log: "1:0/16 2:3/16 ..." = free/slots per
--- bag slot. Used to diagnose why stock right-click equip fails.
+-- bag slot. Used to diagnose swap problems.
 local function BagSlotState()
     local parts = {}
     for i = 1, 4 do
@@ -72,9 +76,10 @@ local function BagSlotState()
     return table.concat(parts, " ")
 end
 
--- Slot indices that are valid swap targets: an unequipped slot, or a slot
--- whose current bag is empty (this client refuses to swap a bag that has
--- items in it). Ascending order — the menu packs valid rows contiguously.
+-- Bag-slot indices that are valid swap targets: an unequipped slot, or a
+-- slot whose current bag is empty (this client refuses to swap a bag that
+-- has items in it). Ascending order — the menu packs valid rows
+-- contiguously.
 local function EmptyBagSlots()
     local slots = {}
     for i = 1, 4 do
@@ -90,6 +95,27 @@ local function EmptyBagSlots()
         if valid then table.insert(slots, i) end
     end
     return slots
+end
+
+-- Does this item have a "Use:" effect (hearthstone, potions, food...)?
+-- GetItemSpell returns the spell cast by the item's use effect, or nil for
+-- items with none (armor, weapons, junk). This is the gate a future tap=use
+-- mechanism (docs/tap-use.md) would hook into; the pickup reaction
+-- deliberately leaves use-items alone.
+local function IsUsableItem(link)
+    if not link then return false end
+    return GetItemSpell(link) ~= nil
+end
+
+-- Does this item equip into a slot (armor/weapon)? Bags are excluded here —
+-- they belong to the bag-swap branch. The equip path of UseContainerItem is
+-- NOT taint-checked in this client, so equipping via the pickup reaction is
+-- clean.
+local function IsEquippable(link)
+    if not link then return false end
+    local _, _, _, _, _, _, _, _, equipSlot = GetItemInfo(link)
+    if not equipSlot or equipSlot == "" then return false end
+    return equipSlot ~= "INVTYPE_BAG"
 end
 
 -- ============================================================================
@@ -174,6 +200,13 @@ local function ScheduleReposition(slotIndex, wasOpen)
     backstopFrame:Show()
 end
 
+-- Swap the bag on the cursor into bag slot slotIndex. The new bag is ALREADY
+-- on the cursor (the stock tap picked it up — the pickup reaction never
+-- moves it), so this is just the exchange: PickupInventoryItem documents the
+-- exchange rule (both sides occupied -> contents exchanged) — unlike
+-- PickupBagFromSlot, which in this client only picks up and returns the
+-- cursor item to its slot. The old bag then lands on the cursor and is
+-- auto-placed back into the source slot.
 local function SwapIntoSlot(slotIndex)
     HideMenu()
     if InCombatLockdown() then
@@ -182,22 +215,20 @@ local function SwapIntoSlot(slotIndex)
     end
     if not source then return end
     local c, s = source.container, source.slot
+
+    local t0, id0 = GetCursorInfo()
+    if t0 ~= "item" then
+        MobileUI_Debug(string.format(
+            "BagSwap: swap into %d aborted, cursor=%s %s",
+            slotIndex, tostring(t0), tostring(id0)))
+        return
+    end
+
     local srcLink = GetContainerItemLink(c, s)
     local srcName = srcLink and select(1, GetItemInfo(srcLink)) or "?"
     MobileUI_Debug(string.format(
-        "BagSwap: swap c=%d s=%d (%s) -> slot %d (%s)",
-        c, s, srcName, slotIndex, tostring(GetBagName(slotIndex) or "empty")))
-
-    -- Pick up the held bag, then equip it into bag slot slotIndex via
-    -- PickupInventoryItem, which documents the exchange rule (both sides
-    -- occupied -> contents exchanged) — unlike PickupBagFromSlot, which in
-    -- this client only picks up and returns the cursor item to its slot.
-    PickupContainerItem(c, s)
-    local t1, id1 = GetCursorInfo()
-    MobileUI_Debug(string.format(
-        "BagSwap:   after pickup: cursor=%s %s, src=%s",
-        tostring(t1), tostring(id1),
-        GetContainerItemLink(c, s) and "occupied" or "empty"))
+        "BagSwap: swap cursor item -> slot %d (%s), source c=%d s=%d (%s)",
+        slotIndex, tostring(GetBagName(slotIndex) or "empty"), c, s, srcName))
 
     PickupInventoryItem(ContainerIDToInventoryID(slotIndex))
     local t2, id2 = GetCursorInfo()
@@ -329,55 +360,114 @@ function MobileUIBagSwap:ShowMenu(itemButton, container, slot)
 end
 
 -- ============================================================================
--- Click interception
+-- Pickup reaction (replaces click interception)
 -- ============================================================================
+-- We do not touch ContainerFrameItemButton_OnClick at all — the stock
+-- handler stays pristine for the whole session, which is what keeps hold-to-
+-- use clean (see the header). A tap does its stock thing (picks the item
+-- up); this poll watches for the empty-cursor -> item transition and, if
+-- the pickup came from a container slot, runs the action for the item. The
+-- mouse action is never rewritten; every call below uses APIs proven clean
+-- in this client.
 
--- Container item buttons wire their OnClick as a string handler in
--- ContainerFrame.xml (resolved at click time), so replacing the global
--- intercepts every bag click — same mechanism as tap=sell.
-local function OnContainerItemClick(self, button)
-    if enabled and button == "RightButton"
-       and not (MerchantFrame and MerchantFrame:IsShown()) then
-        local parent = self:GetParent()
-        local container = parent and parent:GetID()
-        local slot = self:GetID()
-        local isBag = container ~= nil and slot ~= nil and IsBagItem(container, slot)
-        if isBag then
-            MobileUI_Debug(string.format(
-                "BagSwap: right-click c=%s s=%s isBag=true [%s]",
-                tostring(container), tostring(slot), BagSlotState()))
-            -- Stock right-click never equips bags in this client ("This item
-            -- cannot be equipped" even with a free slot), so we always own
-            -- the hold-of-bag gesture. With exactly one empty bag slot the
-            -- choice is unambiguous — swap straight in, no menu.
-            local targets = EmptyBagSlots()
-            if #targets == 1 then
-                source = { container = container, slot = slot }
-                MobileUI_Debug(string.format(
-                    "BagSwap:   one empty slot (%d), swapping directly", targets[1]))
-                SwapIntoSlot(targets[1])
-            else
-                MobileUIBagSwap:ShowMenu(self, container, slot)
-            end
+local prevCursorEmpty = true -- cursor starts empty at login
+
+-- The cursor just picked up an item from a container slot; act on it.
+-- itemButton is the frame the pickup happened on (used to anchor the menu).
+local function OnCursorPickup(itemButton, container, slot, link)
+    local merchantOpen = MerchantFrame and MerchantFrame:IsShown()
+
+    -- Tap = Sell: at a vendor, put the item back and sell it. The sell path
+    -- of UseContainerItem is NOT protected in this client (merchant-open
+    -- wins the dispatch), so this is clean — the same path a stock hold
+    -- takes.
+    if merchantOpen and MobileDB and MobileDB.tapSell then
+        MobileUI_Debug(string.format(
+            "Tap=Sell: pickup c=%s s=%s -> return+sell",
+            tostring(container), tostring(slot)))
+        PickupContainerItem(container, slot)
+        UseContainerItem(container, slot)
+        return
+    end
+
+    -- Bag swap: the bag is already on the cursor (the stock tap picked it
+    -- up). With exactly one empty bag slot the choice is unambiguous — swap
+    -- straight in. Otherwise show the menu. Never in combat (a swap needs
+    -- PickupInventoryItem, protected there) — the bag is put back.
+    if MobileDB and MobileDB.bagSwap and IsBag(link) then
+        MobileUI_Debug(string.format(
+            "BagSwap: pickup c=%s s=%s isBag=true [%s]",
+            tostring(container), tostring(slot), BagSlotState()))
+        if InCombatLockdown() then
+            PickupContainerItem(container, slot) -- put the bag back
+            print("|cff00ccff[MobileUI]|r Can't swap bags in combat.")
             return
         end
+        local targets = EmptyBagSlots()
+        if #targets == 1 then
+            source = { container = container, slot = slot }
+            MobileUI_Debug(string.format(
+                "BagSwap:   one empty slot (%d), swapping directly", targets[1]))
+            SwapIntoSlot(targets[1])
+        else
+            MobileUIBagSwap:ShowMenu(itemButton, container, slot)
+        end
+        return
     end
-    -- Pass through in a clean protected stack: a plain right-click on a
-    -- "Use:" item reaches the protected UseContainerItem, and MobileUI code
-    -- on that stack would taint it (same reason tap=sell is merchant-scoped).
-    -- While a merchant is open we defer via the chain so tap=sell owns the
-    -- click; the merchant check above keeps order-independent.
-    if origClick then
-        securecall(origClick, self, button)
+
+    -- Tap = Equip: return the item and equip it. The equip path of
+    -- UseContainerItem is NOT taint-checked in this client. Never in combat
+    -- — equipping is protected there; the item stays on the cursor (stock
+    -- pickup behavior).
+    if MobileDB and MobileDB.tapEquip and not InCombatLockdown()
+        and IsEquippable(link) then
+        MobileUI_Debug(string.format(
+            "Tap=Equip: pickup c=%s s=%s -> return+equip",
+            tostring(container), tostring(slot)))
+        PickupContainerItem(container, slot)
+        UseContainerItem(container, slot)
+        return
     end
+
+    -- Everything else — use-items, junk, materials — is left alone: the
+    -- item stays on the cursor, exactly as stock. The tap=use mechanism is
+    -- built separately (docs/tap-use.md).
 end
 
-local function InstallWrapper()
-    if installed then return end
-    origClick = ContainerFrameItemButton_OnClick
-    ContainerFrameItemButton_OnClick = OnContainerItemClick
-    installed = true
-    MobileUI_Debug("BagSwap: ContainerFrameItemButton_OnClick wrapped")
+local function HandleCursorPickup()
+    local focus = GetMouseFocus()
+    if not focus then return end
+    local name = focus:GetName()
+    if not name or not name:match("^ContainerFrame%d+Item%d+$") then return end
+    local parent = focus:GetParent()
+    local container = parent and parent:GetID()
+    local slot = focus:GetID()
+    if container == nil or slot == nil then return end
+    -- The client keeps the slot's link while the item is on the cursor
+    -- (locked/occupied), so the slot lookup is the primary source; fall
+    -- back to the cursor item's own link.
+    local link = GetContainerItemLink(container, slot)
+    if not link then
+        local _, id = GetCursorInfo()
+        if id then
+            link = select(2, GetItemInfo(id))
+        end
+    end
+    if not link then return end
+    OnCursorPickup(focus, container, slot, link)
+end
+
+local pollFrame
+local function EnsurePoll()
+    if pollFrame then return end
+    pollFrame = CreateFrame("Frame")
+    pollFrame:SetScript("OnUpdate", function()
+        local hasItem = GetCursorInfo() ~= nil
+        if hasItem and prevCursorEmpty then
+            HandleCursorPickup()
+        end
+        prevCursorEmpty = not hasItem
+    end)
 end
 
 -- ============================================================================
@@ -385,18 +475,34 @@ end
 -- ============================================================================
 
 function MobileUIBagSwap:Apply()
-    enabled = true
-    InstallWrapper()
+    EnsurePoll()
 end
 
 function MobileUIBagSwap:Revert()
-    enabled = false
     HideMenu()
+end
+
+-- Called by MobileUISell:Apply() too, so tap=sell keeps working when
+-- bag-swap is off (and vice versa): the poll is shared by all three
+-- reactions and each checks its own MobileDB flag at pickup time.
+function MobileUIBagSwap:EnsurePoll()
+    EnsurePoll()
 end
 
 function MobileUIBagSwap:Toggle()
     local on = not MobileDB.bagSwap
     MobileDB.bagSwap = on
+    if on then
+        self:Apply()
+    else
+        self:Revert()
+    end
+    return on
+end
+
+function MobileUIBagSwap:ToggleEquip()
+    local on = not MobileDB.tapEquip
+    MobileDB.tapEquip = on
     if on then
         self:Apply()
     else
