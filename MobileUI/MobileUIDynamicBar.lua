@@ -65,7 +65,10 @@ local ALWAYS_BUFF = {
     ["Etching of the Leylines"] = true,
     ["Runic Tattoos: Earth"]    = true,
     ["Palm Sigil: Earth"]       = true,
+    ["Palm Sigil: Fire"]        = true,
     ["Runeshroud"]              = true,
+    ["Weapon Engraving: Fire"]  = true,
+    ["Weapon Engraving: Ice"]   = true,
 }
 
 MobileUIDynamicBar = {}
@@ -184,6 +187,7 @@ local function BuildEntries()
         buffSet[name] = dur or 0
     end
     local candidates = {}
+    local rejected   = {}
     local spellNameFn = GetSpellBookItemName or GetSpellName
     local nt = GetNumSpellTabs() or 0
     local checked = 0
@@ -204,11 +208,13 @@ local function BuildEntries()
                 if sname then
                     local passive = IsPassiveSpell and IsPassiveSpell(i, "spell")
                     local attack  = IsAttackSpell and IsAttackSpell(i, "spell")
+                    local helpful = IsHelpfulSpell and IsHelpfulSpell(i, "spell")
                     local keep    = true
-                    if passive then keep = false end
-                    if attack  then keep = false end
+                    local why     = nil
+                    if passive then keep, why = false, "passive" end
+                    if attack  then keep, why = false, "attack"  end
                     -- Restrict to friendly-target spells only when the API exists.
-                    if IsHelpfulSpell and not IsHelpfulSpell(i, "spell") then keep = false end
+                    if helpful == false then keep, why = false, "nothelpful" end
                     if keep then
                         table.insert(candidates, {
                             kind = "spell", spellbookID = i, name = sname,
@@ -216,6 +222,8 @@ local function BuildEntries()
                             buff = buffSet[sname] ~= nil,
                             dur  = buffSet[sname] or 0,
                         })
+                    else
+                        table.insert(rejected, string.format("%s(%s)", sname, why))
                     end
                 end
             end
@@ -242,7 +250,9 @@ local function BuildEntries()
         "DynamicBar: spell scan (bookname=%s bookinfo=%s) %d checked -> %d candidates -> %d kept: %s",
         tostring(GetSpellBookItemName ~= nil), tostring(GetSpellBookItemInfo ~= nil),
         checked, #candidates, #spells, table.concat(keptNames, ", ")))
-    if #droppedNames > 0 then
+    if #rejected > 0 then
+        MobileUI_Debug("DynamicBar: candidate-rejected: " .. table.concat(rejected, ", "))
+    end    if #droppedNames > 0 then
         MobileUI_Debug("DynamicBar: dropped: " .. table.concat(droppedNames, ", "))
     end
     table.sort(spells, function(a, b)
