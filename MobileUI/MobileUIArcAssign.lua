@@ -28,7 +28,7 @@ local COL_W       = 160
 local COL_GAP      = 8
 local PADDING      = 14
 local CELL_W       = 76
-local CELL_H       = 26
+local CELL_H       = 28
 local CELL_GAP     = 4
 local ROW_GAP      = 2
 local HEADER_H     = 22
@@ -307,7 +307,7 @@ local function GetCell(colIdx, n)
         cell = CreateFrame("Button", nil, menu)
         cell:SetSize(CELL_W, CELL_H)
         cell.icon = cell:CreateTexture(nil, "BACKGROUND")
-        cell.icon:SetSize(20, 20)
+        cell.icon:SetSize(24, 24)
         cell.icon:SetPoint("LEFT", cell, "LEFT", 2, 0)
         cell.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         cell.name = cell:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -454,10 +454,23 @@ AssignArcEntry = function(entry)
         if GetCursorInfo() then ReturnCursorContent() end
         MobileUI_Debug(string.format("ArcAssign: assigned macro '%s' to slot %d", entry.name, slot))
     end
-    -- Refresh display for scatter buttons (OnEvent cleared — the client
-    -- won't redraw the icon after assignment).
+    -- Refresh display after assignment.
+    -- Scatter buttons (ActionButton1-10): OnEvent is cleared, so the client
+    -- won't redraw — call RefreshScatterButtons (taint-safe, same as flip).
+    -- Bar2 buttons (MultiBarBottomLeftButton1-5): OnEvent is intact but
+    -- ACTIONBAR_SLOT_CHANGED may not fire on this client — set the icon
+    -- texture directly (SetTexture is not a tainting op).
     if pickerCtx.isScatter and MobileUIActionFlip then
         pcall(MobileUIActionFlip.RefreshScatterButtons)
+    elseif pickerCtx.btn then
+        local icon = _G[pickerCtx.btn:GetName() .. "Icon"]
+        if icon then
+            local tex = GetActionTexture(pickerCtx.slot)
+            if tex then
+                icon:SetTexture(tex)
+                icon:Show()
+            end
+        end
     end
     CloseArcPicker()
 end

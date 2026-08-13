@@ -84,7 +84,7 @@ local MENU_H_MAX   = 460
 local COL_W        = 160
 local COL_GAP      = 8
 local CELL_W       = 76
-local CELL_H       = 26
+local CELL_H       = 28
 local CELL_GAP     = 4
 local ROW_GAP      = 2
 local HEADER_H     = 22
@@ -512,7 +512,7 @@ local function GetCell(kind, n)
         cell = CreateFrame("Button", nil, menu)
         cell:SetSize(CELL_W, CELL_H)
         cell.icon = cell:CreateTexture(nil, "BACKGROUND")
-        cell.icon:SetSize(20, 20)
+        cell.icon:SetSize(24, 24)
         cell.icon:SetPoint("LEFT", cell, "LEFT", 2, 0)
         cell.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         cell.name = cell:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -791,6 +791,21 @@ AssignEntry = function(entry)
     end
     local t, id = GetActionInfo(slot)
     MobileUI_Debug(string.format("DynamicBar: slot %d now type=%s id=%s", slot, tostring(t), tostring(id)))
+    -- Manual icon refresh: on this Ascension client ACTIONBAR_SLOT_CHANGED
+    -- may not trigger the button's OnEvent to update the icon. Set the
+    -- texture directly from GetActionTexture (same approach as
+    -- RefreshScatterButtons; SetTexture is not a tainting op).
+    local pb = _G["MultiBarBottomLeftButton" .. pickerButton]
+    if pb then
+        local icon = _G["MultiBarBottomLeftButton" .. pickerButton .. "Icon"]
+        if icon then
+            local tex = GetActionTexture(slot)
+            if tex then
+                icon:SetTexture(tex)
+                icon:Show()
+            end
+        end
+    end
     ClosePicker()
 end
 
