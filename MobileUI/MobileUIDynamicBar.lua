@@ -25,10 +25,18 @@
 --                         protected use path); tap a row once to preview its
 --                         tooltip, tap it again to assign. Close via the X
 --                         button, ESC, or a tap
---                         outside. The stock right-click pickup on release
---                         puts the slot's item on the cursor; the menu's
---                         OnHide re-places it (PlaceAction) so nothing is
---                         lost.
+--                         outside. CAST BLOCK: on Artemis a hold sends
+--                         LeftButton-down at touch, RightButton-down at the
+--                         hold threshold, then LeftButton-up at finger lift —
+--                         the left-up fires the stock UseAction and casts the
+--                         skill. We Disable() the button on right-down so the
+--                         disabled button swallows the left-up OnClick (no
+--                         cast); we do the PickupAction ourselves and the
+--                         menu's OnHide re-places it (PlaceAction) so nothing
+--                         is lost. The button is re-enabled on picker close.
+--                         Disable() is a plain widget method — it never
+--                         touches OnClick or secure attributes, so the
+--                         taint-clean tap path is unaffected.
 --
 -- Why no overlay/catcher over the buttons: a Button with
 -- RegisterForClicks(right-only) got NO mouse events on this client (verified
@@ -48,7 +56,10 @@
 --   2. PickupContainerItem -> PlaceAction assigns cleanly on this client.
 --   3. PickupSpellBookItem vs PickupSpell — both are tried; log which exists.
 --   4. The right-up stock pickup is re-placed by the menu OnHide (no cursor
---      item left dangling when the picker is dismissed).
+--      item left dangling when the picker is dismissed). NOTE: the button is
+--      Disable()d on hold (cast block), so the stock right-click OnClick no
+--      longer fires — we do PickupAction ourselves in OnMouseDown; the OnHide
+--      re-place logic is the same.
 --   5. LBF circular skin on the strip buttons keeps the native icon/cooldown
 --      display working (stock OnEvent kept) with no combat taint errors.
 --   6. This client strips ScrollFrame:SetVerticalScroll, Slider:SetObeyStepOnDrag,
@@ -588,6 +599,12 @@ local function CreateMenu()
             if PlaceAction then PlaceAction(slot) end
             if GetCursorInfo() then ReturnCursorContent() end -- place failed
         end
+        -- Re-enable the strip button that was disabled on hold (cast block).
+        -- Must run before pickerButton is nilled. pcall for safety.
+        if pickerButton then
+            local pb = _G["MultiBarBottomLeftButton" .. pickerButton]
+            if pb then pcall(function() pb:Enable() end) end
+        end
         pickerButton = nil
         if clickCatcher then clickCatcher:Hide() end
     end)
@@ -749,8 +766,10 @@ AssignEntry = function(entry)
         return
     end
     local slot = SlotForButton(pickerButton)
-    -- The hold's right-UP fired the stock PickupAction: the slot's previous
-    -- content may be on the cursor — put it back before the new pickup.
+    -- Our OnMouseDown already did PickupAction (the stock right-click
+    -- PickupAction won't fire — the button is disabled). The slot's
+    -- previous content may be on the cursor — put it back before the new
+    -- pickup.
     if GetCursorInfo() then
         if PlaceAction then PlaceAction(slot) end
         if GetCursorInfo() then ReturnCursorContent() end
@@ -804,13 +823,38 @@ local function ShowButton(i, size, x0, y, pitch)
         })
     end
     -- Hold detection: right-down opens the picker (works for empty and
-    -- filled slots). The left path is untouched — the stock OnClick still
-    -- fires UseAction on left-up with no addon on the stack. The stock
-    -- right-click pickup on release lands on the cursor; the menu OnHide
-    -- re-places it.
+    -- filled slots). The left path is untouched for TAPS — a tap sends only
+    -- LeftButton, so this branch never fires and the stock OnClick still
+    -- fires UseAction on left-up with no addon on the stack.
+    --
+    -- CAST BLOCK: on Artemis a hold sends LeftButton-down at touch start,
+    -- then RightButton-down at the hold threshold, then LeftButton-up at
+    -- finger lift. The LeftButton-up fires the stock OnClick → UseAction,
+    -- casting the skill currently in the slot — even though the user meant
+    -- to assign, not cast. To prevent this, we Disable() the button on
+    -- right-down: a disabled button doesn't process OnClick, so the left-up
+    -- at finger lift is swallowed (no UseAction, no cast). Disable() is a
+    -- plain widget method — it does NOT touch the OnClick handler or any
+    -- secure attribute, so the taint-clean tap path is unaffected. The
+    -- button is re-enabled when the picker closes (OnHide).
+    --
+    -- Since the button is now disabled, the stock right-click OnClick
+    -- (PickupAction) won't fire either. We do the pickup ourselves here so
+    -- the slot's previous content lands on the cursor; the menu's OnHide
+    -- re-places it (same cleanup path as before).
     b:SetScript("OnMouseDown", function(self, button)
         if button == "RightButton" then
             MobileUI_Debug(string.format("DynamicBar: btn %s hold", tostring(self:GetName())))
+            -- Disable: prevents the stock OnClick (UseAction) from firing
+            -- on the left-up at finger lift. pcall in case this client
+            -- blocks it in combat (worst case: cast goes through, same as
+            -- before the fix).
+            pcall(function() self:Disable() end)
+            -- Pickup the slot's content ourselves (the stock right-click
+            -- PickupAction won't fire while disabled). Not on the protected
+            -- list; pcall for safety.
+            local slot = SlotForButton(i)
+            pcall(function() if PickupAction then PickupAction(slot) end end)
             local ok, err = pcall(OpenPicker, i)
             if not ok then
                 MobileUI_Debug("DynamicBar: OpenPicker ERROR: " .. tostring(err))
@@ -873,6 +917,7 @@ function MobileUIDynamicBar:Revert()
         local b = _G["MultiBarBottomLeftButton" .. i]
         if b then
             b:SetScript("OnMouseDown", nil)
+            pcall(function() b:Enable() end) -- safety: re-enable if disabled by hold
             if MobileUILayout and MobileUILayout.UnskinButton then
                 MobileUILayout.UnskinButton(b)
             end

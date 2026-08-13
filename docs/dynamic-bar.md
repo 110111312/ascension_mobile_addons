@@ -47,7 +47,7 @@ client renders icon / cooldown / stack count / usable tint natively.
 | Gesture | What happens |
 |---|---|
 | **Tap** (left click) | Stock action-button click → `UseAction(slot)` — uses the item / casts the spell. Taint-clean. |
-| **Hold** (right click) | An `OnMouseDown` script on the stock button (installed the same way the layout installs `OnEnter` on the arc buttons) opens the picker on right-**down** — works for empty and filled slots. |
+| **Hold** (right click) | An `OnMouseDown` script on the stock button opens the picker on right-**down** — works for empty and filled slots. The button is **`Disable()`d** to block the stock `OnClick` from firing on the left-up at finger lift (see Cast Block below). |
 | **Tap a row once** | Shows the entry's tooltip (global `GameTooltip`, pcall-wrapped) and **arms** the cell (gold outline). Also on hover for desktop. |
 | **Tap the same row again** | Assigns it to the held button's slot via pickup+`PlaceAction`, closes the picker. Gated out of combat. |
 | **X button / ESC / tap outside** | Dismisses the picker. |
@@ -57,7 +57,13 @@ assign) instead of hold-for-tooltip — the hold gesture is flaky on Artemis.
 Tapping a different row re-arms that row; the armed state and tooltip reset
 on dismiss.
 
-The stock right-click **up** still fires `ActionButton_OnClick` → `PickupAction(slot)`, which puts the slot's item on the cursor. The menu's **`OnHide`** re-places it via `PlaceAction` (fallback `ReturnCursorContent`), so nothing is lost or left dangling on the cursor — every dismissal path (X, ESC, tap-outside, assign, revert) ends in `menu:Hide()`.
+### Cast block (hold doesn't cast)
+
+On Artemis a hold sends `LeftButton`-down at touch start, `RightButton`-down at the hold threshold, then `LeftButton`-up at finger lift. The `LeftButton`-up fires the stock `OnClick` → `UseAction(slot)`, **casting the skill** currently in the slot — even though the user meant to assign, not cast. WoW Button widgets capture the mouse on mouse-down, so the full-screen click catcher can't intercept the left-up.
+
+**Fix:** on `RightButton`-down (hold detected), `Disable()` the button before opening the picker. A disabled button doesn't process `OnClick`, so the left-up at finger lift is swallowed — no `UseAction`, no cast. `Disable()` is a plain widget method: it does **not** touch the `OnClick` handler or any secure attribute, so the taint-clean tap path is completely unaffected. The button is `Enable()`d again when the picker closes (`OnHide`).
+
+Since the button is disabled, the stock right-click `OnClick` (`PickupAction`) won't fire either. We do `PickupAction(slot)` ourselves in `OnMouseDown` so the slot's previous content lands on the cursor; the menu's `OnHide` re-places it via `PlaceAction` (fallback `ReturnCursorContent`) — the same cleanup path as before. The button briefly greys out during the hold, which doubles as visual feedback for assign mode.
 
 ### Why no overlay/catcher over the buttons
 
@@ -201,7 +207,10 @@ original anchors and shown state from `saved.bar2tail`).
   is never swapped, the button is never field-written. The only addon script
   on it is `OnMouseDown` (opens the picker; no protected calls), which runs
   on the down event and is not on the stack of the later left-up
-  `UseAction`. Same path every arc spell cast uses.
+  `UseAction`. Same path every arc spell cast uses. The hold's `Disable()`
+  is a plain widget method (not a protected call, not an OnClick swap) — it
+  prevents OnClick from firing but never modifies the handler or any secure
+  attribute, so the tap-to-cast path stays taint-clean.
 - The picker and its dismiss catcher are addon-created plain frames; they
   never call protected functions.
 - Replacing an assignment: `PlaceAction` *exchanges*, so the previous slot
