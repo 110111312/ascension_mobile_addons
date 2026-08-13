@@ -92,7 +92,7 @@ function MobileUIGuard:Apply()
             MainMenuBar.busy = nil
             -- Flip poll + flash re-assert (delegated to MobileUIActionFlip):
             -- pure Lua, safe during combat lockdown.
-            MobileUIActionFlip:OnGuardTick(elapsed)
+            MobileUIActionFlip.OnGuardTick(elapsed)
             -- Everything below this line Show()/Hide()s PROTECTED frames (the
             -- stock bars and bar buttons): during combat lockdown those calls
             -- are blocked and TAINT the frames — which then surfaces as
