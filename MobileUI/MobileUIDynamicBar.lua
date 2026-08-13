@@ -445,11 +445,26 @@ local function BuildEntries()
     local numAccount, numChar = GetNumMacros()
     numAccount = numAccount or 0
     numChar = numChar or 0
-    for i = 1, numAccount + numChar do
+    MobileUI_Debug(string.format("DynamicBar: GetNumMacros account=%s char=%s",
+        tostring(numAccount), tostring(numChar)))
+    -- Account macros: indices 1..numAccount
+    -- Character macros: indices MAX_ACCOUNT_MACROS+1 .. MAX_ACCOUNT_MACROS+numChar
+    -- (stock MacroFrame uses offset 36 — MAX_ACCOUNT_MACROS in 3.3.5a)
+    local MAX_ACCOUNT_MACROS = 36
+    for i = 1, numAccount do
         local mname, micon = GetMacroInfo(i)
         if mname then
             table.insert(macros, {
                 kind = "macro", macroIndex = i,
+                name = mname, icon = micon,
+            })
+        end
+    end
+    for i = 1, numChar do
+        local mname, micon = GetMacroInfo(i + MAX_ACCOUNT_MACROS)
+        if mname then
+            table.insert(macros, {
+                kind = "macro", macroIndex = i + MAX_ACCOUNT_MACROS,
                 name = mname, icon = micon,
             })
         end
