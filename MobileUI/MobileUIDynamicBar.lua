@@ -796,15 +796,13 @@ AssignEntry = function(entry)
     -- texture directly from GetActionTexture (same approach as
     -- RefreshScatterButtons; SetTexture is not a tainting op).
     local pb = _G["MultiBarBottomLeftButton" .. pickerButton]
-    if pb then
-        local icon = _G["MultiBarBottomLeftButton" .. pickerButton .. "Icon"]
-        if icon then
-            local tex = GetActionTexture(slot)
-            if tex then
-                icon:SetTexture(tex)
-                icon:Show()
-            end
-        end
+    local icon = pb and _G["MultiBarBottomLeftButton" .. pickerButton .. "Icon"]
+    local tex = GetActionTexture(slot)
+    MobileUI_Debug(string.format("DynamicBar: iconRefresh btn=%s pb=%s icon=%s tex=%s",
+        tostring(pickerButton), tostring(pb ~= nil), tostring(icon ~= nil), tostring(tex)))
+    if icon and tex then
+        icon:SetTexture(tex)
+        icon:Show()
     end
     ClosePicker()
 end

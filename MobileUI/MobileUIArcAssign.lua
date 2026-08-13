@@ -462,14 +462,16 @@ AssignArcEntry = function(entry)
     -- texture directly (SetTexture is not a tainting op).
     if pickerCtx.isScatter and MobileUIActionFlip then
         pcall(MobileUIActionFlip.RefreshScatterButtons)
+        MobileUI_Debug("ArcAssign: iconRefresh via RefreshScatterButtons")
     elseif pickerCtx.btn then
-        local icon = _G[pickerCtx.btn:GetName() .. "Icon"]
-        if icon then
-            local tex = GetActionTexture(pickerCtx.slot)
-            if tex then
-                icon:SetTexture(tex)
-                icon:Show()
-            end
+        local iconName = pickerCtx.btn:GetName() .. "Icon"
+        local icon = _G[iconName]
+        local tex = GetActionTexture(pickerCtx.slot)
+        MobileUI_Debug(string.format("ArcAssign: iconRefresh icon=%s tex=%s",
+            tostring(icon ~= nil), tostring(tex)))
+        if icon and tex then
+            icon:SetTexture(tex)
+            icon:Show()
         end
     end
     CloseArcPicker()
