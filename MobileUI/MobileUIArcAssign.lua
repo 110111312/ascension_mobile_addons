@@ -117,8 +117,12 @@ local function BuildArcEntries()
                 local entries = {}
                 -- Deduplicate by spell name: keep only the highest rank.
                 -- GetSpellBookItemName returns name, rank; rank is like
-                -- "Rank 1", "Rank 2". Spells with no rank get rankNum 0.
-                local best = {}  -- [spellName] = { entry, rankNum }
+                -- "Rank 1", "Rank 2". On this Ascension client the rank
+                -- string may be nil/empty, so we fall back to spellbookID:
+                -- the spellbook lists ranks in ascending order, so the
+                -- highest spellbookID for a given name is the highest rank.
+                local best = {}  -- [spellName] = { entry, rankNum, sbID }
+                local rankSamples = {}  -- debug: first few rank strings
                 for i = offset + 1, offset + num do
                     local sname, srank = spellNameFn and spellNameFn(i, "spell")
                     if not sname and GetSpellBookItemInfo then
@@ -129,14 +133,28 @@ local function BuildArcEntries()
                     end
                     if sname then
                         local rankNum = 0
-                        if srank then
+                        if srank and srank ~= "" then
                             local r = tonumber(srank:match("Rank%s*(%d+)"))
                             if r then rankNum = r end
+                            if #rankSamples < 5 then
+                                rankSamples[sname] = tostring(srank)
+                            end
                         end
                         local prev = best[sname]
-                        if not prev or rankNum > prev.rankNum then
+                        local better = false
+                        if not prev then
+                            better = true
+                        elseif rankNum > prev.rankNum then
+                            better = true
+                        elseif rankNum == prev.rankNum and i > prev.sbID then
+                            -- Rank string unavailable (both 0): fall back to
+                            -- spellbookID — higher ID = higher rank.
+                            better = true
+                        end
+                        if better then
                             best[sname] = {
                                 rankNum = rankNum,
+                                sbID = i,
                                 entry = {
                                     kind = "spell",
                                     spellbookID = i,
@@ -146,6 +164,11 @@ local function BuildArcEntries()
                             }
                         end
                     end
+                end
+                if MobileDB and MobileDB.debug and next(rankSamples) then
+                    local parts = {}
+                    for n, r in pairs(rankSamples) do parts[#parts+1] = n .. "=" .. r end
+                    MobileUI_Debug("ArcAssign: rank samples: " .. table.concat(parts, ", "))
                 end
                 for _, info in pairs(best) do
                     table.insert(entries, info.entry)
