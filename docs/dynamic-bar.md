@@ -63,7 +63,7 @@ On Artemis a hold sends `LeftButton`-down at touch start, `RightButton`-down at 
 
 **Fix:** on `RightButton`-down (hold detected), `Disable()` the button before opening the picker. A disabled button doesn't process `OnClick`, so the left-up at finger lift is swallowed — no `UseAction`, no cast. `Disable()` is a plain widget method: it does **not** touch the `OnClick` handler or any secure attribute, so the taint-clean tap path is completely unaffected. The button is `Enable()`d again when the picker closes (`OnHide`).
 
-Since the button is disabled, the stock right-click `OnClick` (`PickupAction`) won't fire either. We do `PickupAction(slot)` ourselves in `OnMouseDown` so the slot's previous content lands on the cursor; the menu's `OnHide` re-places it via `PlaceAction` (fallback `ReturnCursorContent`) — the same cleanup path as before. The button briefly greys out during the hold, which doubles as visual feedback for assign mode.
+Since the button is disabled, the stock right-click `OnClick` (`PickupAction`) won't fire either — the slot's content stays in place (no cursor pickup). `AssignEntry`'s `PlaceAction` handles the exchange on assign; `OnHide`'s re-place is a no-op when the cursor is empty (dismiss without assigning leaves the slot intact). The button briefly greys out during the hold, which doubles as visual feedback for assign mode.
 
 ### Why no overlay/catcher over the buttons
 
