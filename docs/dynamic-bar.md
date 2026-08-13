@@ -266,8 +266,9 @@ or logout) is the source of truth — no chat prints.
 ## Files
 
 - `MobileUIDynamicBar.lua` — the module (strip + picker + assignment)
-- `MobileUILayout.lua` — guard skip (`HideBar2Tail`), apply step, revert
-  hook, exposed `SkinButton`/`UnskinButton`
+- `MobileUILayout.lua` — apply step, revert hook, exposed `SkinButton`/`UnskinButton`
+- `MobileUIGuard.lua` — guard skip (`HideBar2Tail`)
+- `MobileUIActionBar.lua` — exposed `HOTKEY_FRAMES` (guard re-hides them)
 - `MobileUI.lua` — default, slash command, options handler
 - `MobileUIOptions.xml` — checkbox
 - `MobileUI.toc` — file list, version bump

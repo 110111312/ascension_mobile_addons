@@ -16,5 +16,9 @@ MobileUIWorldMap.lua
 MobileUIWorldMapPanel.lua
 MobileUIWorldMapMarkers.lua
 MobileUILayout.lua
+MobileUIActionBar.lua
+MobileUIActionFlip.lua
+MobileUIFrames.lua
+MobileUIGuard.lua
 MobileUIDynamicBar.lua
 MobileUIOptions.xml

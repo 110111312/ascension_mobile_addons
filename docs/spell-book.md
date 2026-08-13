@@ -1,7 +1,7 @@
 # Spell Book — Centered on Screen
 
 Feature: `AscensionSpellbookFrame` repositioning, implemented in
-`MobileUILayout.lua` (section 5c, `ApplySpellBook` / `RevertSpellBook`).
+`MobileUIFrames.lua` (`ApplySpellBook` / `RevertSpellBook`).
 
 ## Problem
 
@@ -46,9 +46,9 @@ matching the one-line-per-step pattern of the other layout steps.
 - `SaveOriginals` saves `AscensionSpellbookFrame`'s name, points, scale, and
   `OnShow` script (once, guarded by `saved.init`), plus the micro button's
   original `OnClick`.
-- `MobileUILayout:Apply()` — `step("ApplySpellBook", ApplySpellBook)` (after
+- `MobileUILayout:Apply()` — `step("ApplySpellBook", function() MobileUIFrames.ApplySpellBook() end)` (after
   party frames, before chat).
-- `MobileUILayout:Revert()` — `RevertSpellBook()`.
+- `MobileUILayout:Revert()` — `MobileUIFrames.RevertSpellBook()`.
 
 ## Notes / limitations
 

@@ -56,7 +56,8 @@ bag first, then swap.
 the swapped slot's window) on `BAG_UPDATE` events after a swap. The module
 registers its own `BAG_UPDATE` handler *after* the client's frames, so it
 runs after their re-layout in the same event pass and re-pins the frames to
-the mobile column (via `MobileUILayout.RepositionContainerFrames()`) plus
+the mobile column (via `MobileUIFrames.RepositionContainerFrames()`, also
+aliased as `MobileUILayout.RepositionContainerFrames()` for backward compat) plus
 re-opens the swapped slot's window if it was open at swap time — all before
 anything renders, so there is no visible flicker. A single late snap (~1.2s)
 backstops anything that happens outside a `BAG_UPDATE`.

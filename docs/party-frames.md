@@ -10,7 +10,7 @@ members still works, layout toggle/revert restores the left-side column, and
 no secure-call errors appear in combat. Update this doc with the results
 (and any position/scale tweaks) afterwards.
 
-Feature: `MobileUILayout.lua` (section 5b). Moves the stock 3.3.5a party
+Feature: `MobileUIFrames.lua` (`ApplyPartyFrames` / `RevertPartyFrames`). Moves the stock 3.3.5a party
 member frames off the left side (where they collided with the quest tracker
 under the map) into the empty vertical strip on the right edge, scaled down
 to fit.

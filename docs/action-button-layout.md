@@ -114,7 +114,7 @@ while stealthed). So the reliable driver is a **0.25s state poll** in the
 guardFrame `OnUpdate` comparing `GetActionBarPage()`/`GetBonusBarOffset()`;
 the `flipFrame` event watcher is a fast path on top.
 
-**Implementation (`MobileUILayout.ApplyFlip`):**
+**Implementation (`MobileUIActionFlip.ApplyFlip`, in `MobileUIActionFlip.lua`):**
 
 - The client owns the stance→bar mapping; the addon only mirrors it. The target
   page is resolved generically (no per-class guessing):
