@@ -24,11 +24,11 @@ MobileUIArcAssign = {}
 -- ============================================================================
 -- Constants
 -- ============================================================================
-local COL_W       = 160
+local COL_W       = 200
 local COL_GAP      = 8
 local PADDING      = 14
-local CELL_W       = 76
-local CELL_H       = 28
+local CELL_W       = 96
+local CELL_H       = 36
 local CELL_GAP     = 4
 local ROW_GAP      = 2
 local HEADER_H     = 22
@@ -233,7 +233,7 @@ end
 local function CreateMenu()
     if menu then menu:Hide() end
     menu = CreateFrame("Frame", "MobileUIArcAssignMenu", UIParent)
-    menu:SetSize(692, MENU_H_MAX)
+    menu:SetSize(852, MENU_H_MAX)
     menu:SetFrameStrata("DIALOG")
     menu:SetClampedToScreen(true)
     menu:SetBackdrop({
@@ -307,11 +307,11 @@ local function GetCell(colIdx, n)
         cell = CreateFrame("Button", nil, menu)
         cell:SetSize(CELL_W, CELL_H)
         cell.icon = cell:CreateTexture(nil, "BACKGROUND")
-        cell.icon:SetSize(24, 24)
-        cell.icon:SetPoint("LEFT", cell, "LEFT", 2, 0)
+        cell.icon:SetSize(32, 32)
+        cell.icon:SetPoint("LEFT", cell, "LEFT", 3, 0)
         cell.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        cell.name = cell:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        cell.name:SetPoint("LEFT", cell.icon, "RIGHT", 3, 0)
+        cell.name = cell:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        cell.name:SetPoint("LEFT", cell.icon, "RIGHT", 4, 0)
         cell.name:SetPoint("RIGHT", cell, "RIGHT", -2, 0)
         cell.name:SetJustifyH("LEFT")
         cell:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
@@ -361,7 +361,7 @@ local function PopulateColumns()
 
     local capH = math.min(MENU_H_MAX, UIParent:GetHeight() - 30)
     local availH = capH - 44 - HEADER_H - 12
-    local cellH = math.max(20, math.min(CELL_H, math.floor(availH / maxRows)))
+    local cellH = math.max(28, math.min(CELL_H, math.floor(availH / maxRows)))
     local rowH = cellH + ROW_GAP
 
     for ci = 1, #arcEntries do

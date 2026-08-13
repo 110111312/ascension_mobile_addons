@@ -79,12 +79,12 @@ local STRIP_END_MARG = 8   -- gap before the player frame
 -- Picker: 4 category columns (Items / Spells / Mounts / Professions), each
 -- a 2-wide grid of compact rows. No scrolling — the frame height adapts to
 -- the tallest column (cell height shrinks if a category is long).
-local MENU_W       = 692  -- 4 cols x 160 + 3 gaps x 8 + 2 x 14 padding
+local MENU_W       = 852  -- 4 cols x 200 + 3 gaps x 8 + 2 x 14 padding
 local MENU_H_MAX   = 460
-local COL_W        = 160
+local COL_W        = 200
 local COL_GAP      = 8
-local CELL_W       = 76
-local CELL_H       = 28
+local CELL_W       = 96
+local CELL_H       = 36
 local CELL_GAP     = 4
 local ROW_GAP      = 2
 local HEADER_H     = 22
@@ -512,11 +512,11 @@ local function GetCell(kind, n)
         cell = CreateFrame("Button", nil, menu)
         cell:SetSize(CELL_W, CELL_H)
         cell.icon = cell:CreateTexture(nil, "BACKGROUND")
-        cell.icon:SetSize(24, 24)
-        cell.icon:SetPoint("LEFT", cell, "LEFT", 2, 0)
+        cell.icon:SetSize(32, 32)
+        cell.icon:SetPoint("LEFT", cell, "LEFT", 3, 0)
         cell.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        cell.name = cell:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        cell.name:SetPoint("LEFT", cell.icon, "RIGHT", 3, 0)
+        cell.name = cell:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        cell.name:SetPoint("LEFT", cell.icon, "RIGHT", 4, 0)
         cell.name:SetPoint("RIGHT", cell, "RIGHT", -2, 0)
         cell.name:SetJustifyH("LEFT")
         cell.count = cell:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -660,7 +660,7 @@ local function PopulateColumns()
     end
     local capH = math.min(MENU_H_MAX, UIParent:GetHeight() - 30)
     local availH = capH - 44 - HEADER_H - 12
-    local cellH = math.max(20, math.min(CELL_H, math.floor(availH / math.max(1, maxRows))))
+    local cellH = math.max(28, math.min(CELL_H, math.floor(availH / math.max(1, maxRows))))
     local rowH = cellH + ROW_GAP
     for ci, kind in ipairs(GROUP_ORDER) do
         local col = columns[kind]
