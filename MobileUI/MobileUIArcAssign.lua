@@ -454,21 +454,16 @@ AssignArcEntry = function(entry)
         if GetCursorInfo() then ReturnCursorContent() end
         MobileUI_Debug(string.format("ArcAssign: assigned macro '%s' to slot %d", entry.name, slot))
     end
-    -- Refresh display after assignment.
-    -- Scatter buttons (ActionButton1-10): OnEvent is cleared, so the client
-    -- won't redraw — call RefreshScatterButtons (taint-safe, same as flip).
-    -- Bar2 buttons (MultiBarBottomLeftButton1-5): OnEvent is intact but
-    -- ACTIONBAR_SLOT_CHANGED may not fire on this client — set the icon
-    -- texture directly (SetTexture is not a tainting op).
-    if pickerCtx.isScatter and MobileUIActionFlip then
-        pcall(MobileUIActionFlip.RefreshScatterButtons)
-        MobileUI_Debug("ArcAssign: iconRefresh via RefreshScatterButtons")
-    elseif pickerCtx.btn then
-        local iconName = pickerCtx.btn:GetName() .. "Icon"
-        local icon = _G[iconName]
+    -- Direct icon refresh for ALL buttons. We can't rely on
+    -- RefreshScatterButtons here: out of combat it calls
+    -- ActionButton_UpdateAction, which only updates when the action SLOT
+    -- changes (page flip) — not when the slot CONTENT changes (assignment).
+    -- SetTexture is not a tainting op, so this is safe for all buttons.
+    if pickerCtx.btn then
+        local icon = _G[pickerCtx.btn:GetName() .. "Icon"]
         local tex = GetActionTexture(pickerCtx.slot)
-        MobileUI_Debug(string.format("ArcAssign: iconRefresh icon=%s tex=%s",
-            tostring(icon ~= nil), tostring(tex)))
+        MobileUI_Debug(string.format("ArcAssign: iconRefresh btn=%s icon=%s tex=%s",
+            tostring(pickerCtx.btn:GetName()), tostring(icon ~= nil), tostring(tex)))
         if icon and tex then
             icon:SetTexture(tex)
             icon:Show()
