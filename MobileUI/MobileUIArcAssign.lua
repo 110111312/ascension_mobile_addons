@@ -99,36 +99,60 @@ end
 -- ============================================================================
 -- Entry building
 -- ============================================================================
--- Scans spellbook tabs 2-N (skipping tab 1 = General), grouping all spells
--- by their tab name. Adds a Macros category at the end. No filtering: every
--- spell in the specialization tabs is shown.
+-- Scans spellbook tabs, skipping General (tab 1) and the "Ascension Vanity
+-- Items" tab. Groups all spells by their tab name and deduplicates by spell
+-- name, keeping only the highest rank. Adds a Macros category at the end.
+-- No passive/attack/harmful filtering — every class spell is shown.
 local function BuildArcEntries()
     local cats = {}
     local spellNameFn = GetSpellBookItemName or GetSpellName
     local nt = GetNumSpellTabs() or 0
-    for tab = 2, nt do
+    for tab = 1, nt do
         local tname, _, offset, num = GetSpellTabInfo(tab)
         if tname and offset and num and num > 0 then
-            local entries = {}
-            for i = offset + 1, offset + num do
-                local sname = spellNameFn and spellNameFn(i, "spell")
-                if not sname and GetSpellBookItemInfo then
-                    local stype, sid = GetSpellBookItemInfo(i, "spell")
-                    if stype == "SPELL" and sid then
-                        sname = select(1, GetSpellInfo(sid))
+            -- Skip General (always tab 1) and vanity/item tabs (e.g.
+            -- "Ascension Vanity Items") — these are not class specializations.
+            local lower = tname:lower()
+            if tab ~= 1 and not lower:find("vanity") then
+                local entries = {}
+                -- Deduplicate by spell name: keep only the highest rank.
+                -- GetSpellBookItemName returns name, rank; rank is like
+                -- "Rank 1", "Rank 2". Spells with no rank get rankNum 0.
+                local best = {}  -- [spellName] = { entry, rankNum }
+                for i = offset + 1, offset + num do
+                    local sname, srank = spellNameFn and spellNameFn(i, "spell")
+                    if not sname and GetSpellBookItemInfo then
+                        local stype, sid = GetSpellBookItemInfo(i, "spell")
+                        if stype == "SPELL" and sid then
+                            sname, srank = GetSpellInfo(sid)
+                        end
+                    end
+                    if sname then
+                        local rankNum = 0
+                        if srank then
+                            local r = tonumber(srank:match("Rank%s*(%d+)"))
+                            if r then rankNum = r end
+                        end
+                        local prev = best[sname]
+                        if not prev or rankNum > prev.rankNum then
+                            best[sname] = {
+                                rankNum = rankNum,
+                                entry = {
+                                    kind = "spell",
+                                    spellbookID = i,
+                                    name = sname,
+                                    icon = GetSpellTexture and GetSpellTexture(i, "spell") or nil,
+                                },
+                            }
+                        end
                     end
                 end
-                if sname then
-                    table.insert(entries, {
-                        kind = "spell",
-                        spellbookID = i,
-                        name = sname,
-                        icon = GetSpellTexture and GetSpellTexture(i, "spell") or nil,
-                    })
+                for _, info in pairs(best) do
+                    table.insert(entries, info.entry)
                 end
+                table.sort(entries, function(a, b) return a.name < b.name end)
+                table.insert(cats, { name = tname, entries = entries })
             end
-            table.sort(entries, function(a, b) return a.name < b.name end)
-            table.insert(cats, { name = tname, entries = entries })
         end
     end
     -- Macros
@@ -149,9 +173,10 @@ local function BuildArcEntries()
     end
     table.sort(macroEntries, function(a, b) return a.name < b.name end)
     table.insert(cats, { name = "Macros", entries = macroEntries })
-    MobileUI_Debug(string.format("ArcAssign: %d categories, %d total entries",
-        #cats, #macroEntries + (function() local t = 0
-            for _, c in ipairs(cats) do t = t + #c.entries end return t end)()))
+    local totalSpells = 0
+    for _, c in ipairs(cats) do totalSpells = totalSpells + #c.entries end
+    MobileUI_Debug(string.format("ArcAssign: %d categories, %d spells, %d macros",
+        #cats, totalSpells - #macroEntries, #macroEntries))
     return cats
 end
 
