@@ -20,7 +20,7 @@ local PARTY_SCALE     = MobileUILayout.PARTY_SCALE
 local UnskinButton    = MobileUILayout.UnskinButton
 
 -- Module-local state (created on first apply, reused on re-apply)
-local menuBar, bagButton, bagHooked, partyFrame, spellBookTimer, talentTimer
+local menuBar, bagButton, bagHooked, partyFrame, partyAssertTimer, spellBookTimer, talentTimer
 
 -- 1. Map
 -- Stock 3.3.5a fires Minimap_OnClick on ANY mouse-up over the minimap, which
@@ -55,18 +55,83 @@ end
 
 -- 2. Menu Bar → Top Right, Horizontal Circular Buttons
 --    REPARENT existing micro buttons + apply standalone circular skin
+
+-- Discovery scan: find ALL micro buttons on this client (standard + custom).
+-- Scans _G for any frame whose name contains "MicroButton", and also scans
+-- children of known micro-button container frames. Logs each found button's
+-- name, parent, and size so we can identify Ascension's custom additions.
+local function ScanAllMicroButtons()
+    local found = {}
+    -- 1. Scan _G for globals matching *MicroButton*
+    for k, v in pairs(_G) do
+        if type(k) == "string" and k:find("MicroButton") and type(v) == "table" and v.GetObjectType and v:GetObjectType() == "Button" then
+            found[k] = v
+        end
+    end
+    -- 2. Scan children of known container frames
+    local containers = { "MicroButtonFrame", "MainMenuMicroButtonManager", "UIParent" }
+    for _, cName in ipairs(containers) do
+        local c = _G[cName]
+        if c and c.GetChildren then
+            -- In 3.3.5a, :GetChildren() returns multiple values; iterate
+            local kids = { c:GetChildren() }
+            for _, kid in ipairs(kids) do
+                local kn = kid:GetName()
+                if kn and kn:find("MicroButton") then
+                    found[kn] = kid
+                end
+            end
+        end
+    end
+    -- 3. Log results
+    local names = {}
+    for name, btn in pairs(found) do
+        names[#names + 1] = name
+    end
+    table.sort(names)
+    MobileUI_Debug(string.format("  SCAN: found %d micro buttons total", #names))
+    for _, name in ipairs(names) do
+        local btn = found[name]
+        local parent = btn:GetParent()
+        local pn = parent and parent:GetName() or "(nil)"
+        local w = btn:GetWidth() or 0
+        local h = btn:GetHeight() or 0
+        local shown = btn:IsShown() and 1 or 0
+        local pt, rel, relPt, x, y = btn:GetPoint()
+        MobileUI_Debug(string.format("  SCAN: %s parent=%s w=%.0f h=%.0f shown=%d pt=%s x=%s y=%s",
+            name, pn, w, h, shown, tostring(pt), tostring(x), tostring(y)))
+    end
+    return found
+end
+
 function MobileUIFrames.ApplyMenuBar()
     MobileUI_Debug("ApplyMenuBar: starting")
+    -- Run discovery scan before layout (logs all micro buttons on this client)
+    local scanned = ScanAllMicroButtons()
+    -- Log which MICRO_BUTTONS entries are NOT in the scan result (missing)
+    -- and which scan results are NOT in MICRO_BUTTONS (extra = custom)
+    local known = {}
+    for _, name in ipairs(MICRO_BUTTONS) do known[name] = true end
+    for name, _ in pairs(scanned) do
+        if not known[name] then
+            MobileUI_Debug(string.format("  SCAN: EXTRA (not in MICRO_BUTTONS): %s", name))
+        end
+    end
+    for _, name in ipairs(MICRO_BUTTONS) do
+        if not scanned[name] then
+            MobileUI_Debug(string.format("  SCAN: MISSING (in MICRO_BUTTONS but not found): %s", name))
+        end
+    end
     if not menuBar then
         menuBar = CreateFrame("Frame", "MobileUIMenuBar", UIParent)
         menuBar:SetFrameStrata("HIGH")
     end
     menuBar:ClearAllPoints()
     menuBar:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -8, -8)
-    menuBar:SetSize(180, 70)
+    menuBar:SetSize(200, 70)
     menuBar:Show()
 
-    -- 2 rows: first 5 buttons in top row, last 5 in bottom row
+    -- 2 rows: first 6 buttons in top row, last 6 in bottom row
     local xOffset = 0
     local yOffset = 0
     local count = 0
@@ -102,12 +167,12 @@ function MobileUIFrames.ApplyMenuBar()
 
             xOffset = xOffset + 30
             count = count + 1
-            -- After 5 buttons, wrap to second row
-            if count == 5 then
+            -- After 6 buttons, wrap to second row
+            if count == 6 then
                 xOffset = 0
                 yOffset = 32
             end
-            MobileUI_Debug("  " .. name .. " -> x=" .. xOffset .. " row=" .. (count > 5 and 2 or 1))
+            MobileUI_Debug("  " .. name .. " -> x=" .. xOffset .. " row=" .. (count > 6 and 2 or 1))
         else
             MobileUI_Debug("  " .. name .. " NOT FOUND")
         end
@@ -321,36 +386,74 @@ end
 -- The frames are SecureUnitButtonTemplate (protected): all reparent/point/
 -- scale calls run out of combat (Apply defers during lockdown), and the
 -- client's own Show/Hide on PARTY_MEMBERS_CHANGED keeps working because
--- reparenting does not taint. The client never re-anchors the frames
--- (PartyMemberFrame.lua only touches internal art textures), so no guard
--- re-assert is needed.
+-- reparenting does not taint. A 0.25s re-assert timer checks if any frame
+-- drifted back to UIParent (the client may re-parent on disconnect/raid
+-- events) and re-applies the reparent. The container has an explicit size
+-- (128×242) so frames anchored TOPLEFT(0,0) render in the correct position
+-- instead of extending off the right edge of the screen.
+local function ReparentPartyFrames()
+    if not partyFrame then return end
+    for i, name in ipairs(PARTY_MEMBER_FRAMES) do
+        local f = _G[name]
+        if f then
+            local curParent = f:GetParent()
+            if curParent ~= partyFrame then
+                MobileUI_Debug("PartyAssert: " .. name .. " re-parenting from " ..
+                    (curParent and curParent:GetName() or "nil"))
+                f:SetParent(partyFrame)
+            end
+            if i == 1 then
+                f:ClearAllPoints()
+                f:SetPoint("TOPLEFT", partyFrame, "TOPLEFT", 0, 0)
+            end
+        end
+    end
+end
+
 function MobileUIFrames.ApplyPartyFrames()
     MobileUI_Debug("ApplyPartyFrames: starting")
     if not partyFrame then
         partyFrame = CreateFrame("Frame", "MobileUIPartyFrame", UIParent)
         partyFrame:SetFrameStrata("LOW")
     end
-    for i, name in ipairs(PARTY_MEMBER_FRAMES) do
-        local f = _G[name]
-        if f then
-            f:SetParent(partyFrame)
-            if i == 1 then
-                f:ClearAllPoints()
-                f:SetPoint("TOPLEFT", partyFrame, "TOPLEFT", 0, 0)
-            end
-        else
-            MobileUI_Debug("ApplyPartyFrames: " .. name .. " NOT FOUND")
-        end
-    end
     partyFrame:ClearAllPoints()
     -- TOPRIGHT -20,-80: right edge aligned with button 15's column (right
     -- edge at -20), top 2 units below the menu bar's bottom edge (y=78).
     partyFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -20, -80)
+    -- Container must have explicit size: 128 = PartyMemberFrame width,
+    -- 242 = total unscaled stack height (4 frames at 53 + 3 gaps at ~10).
+    -- Without this, the 0×0 container puts TOPLEFT at the right screen edge,
+    -- and frames anchored TOPLEFT(0,0) extend off-screen to the right.
+    partyFrame:SetSize(128, 242)
     partyFrame:SetScale(PARTY_SCALE)
     partyFrame:Show()
+
+    ReparentPartyFrames()
+
+    -- Re-assert timer: the client may re-parent or re-anchor frames on
+    -- party events (PARTY_MEMBERS_CHANGED, disconnect, etc.). Periodically
+    -- check and re-apply if a frame drifted back to UIParent.
+    if not partyAssertTimer then
+        partyAssertTimer = CreateFrame("Frame")
+        partyAssertTimer._delay = 0
+        partyAssertTimer:SetScript("OnUpdate", function(self, elapsed)
+            if not MobileDB or not MobileDB.layoutEnabled then
+                self:Hide()
+                return
+            end
+            self._delay = self._delay + elapsed
+            if self._delay < 0.25 then return end
+            self._delay = 0
+            if InCombatLockdown() then return end
+            ReparentPartyFrames()
+        end)
+    end
+    partyAssertTimer:Show()
+
     MobileUI_Debug("ApplyPartyFrames: done (scale=" .. PARTY_SCALE .. ")")
 end
 function MobileUIFrames.RevertPartyFrames()
+    if partyAssertTimer then partyAssertTimer:Hide() end
     if partyFrame then partyFrame:Hide() end
     for _, name in ipairs(PARTY_MEMBER_FRAMES) do
         local f, sv = _G[name], saved.party and saved.party[name]

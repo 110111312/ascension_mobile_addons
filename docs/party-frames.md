@@ -1,14 +1,13 @@
 # Party Frames — Right-Edge Strip
 
-> **⚠️ UNTESTED — NOT VERIFIED IN-GAME.** This feature was implemented from
-the stock 3.3.5a FrameXML + the existing layout geometry, but has **not**
-been loaded in-game yet. Scale, spacing, alignment and the protected-frame
-behavior are all theoretical until tested. When the user has a chance to
-test it, verify: party frames render in the right-edge strip (no overlap
-with the menu bar above or button 15 below), 4 members + pets fit, clicking
-members still works, layout toggle/revert restores the left-side column, and
-no secure-call errors appear in combat. Update this doc with the results
-(and any position/scale tweaks) afterwards.
+> **⚠️ PARTIALLY TESTED.** Initial implementation was broken (container had
+> no explicit size → frames rendered off-screen right; no re-assert → frames
+> drifted back on disconnect). Fixed in v2.9.1: container now has
+> `SetSize(128, 242)` and a 0.25s re-assert timer re-parents frames that drift
+> back to UIParent. Needs full re-testing: verify party frames render in the
+> right-edge strip, 4 members + pets fit, clicking members still works,
+> layout toggle/revert restores the left-side column, and no secure-call
+> errors appear in combat.
 
 Feature: `MobileUIFrames.lua` (`ApplyPartyFrames` / `RevertPartyFrames`). Moves the stock 3.3.5a party
 member frames off the left side (where they collided with the quest tracker
