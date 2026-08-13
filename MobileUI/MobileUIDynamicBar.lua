@@ -76,10 +76,10 @@ local PITCH_GAP      = 4
 local STRIP_MARGIN   = 8   -- gap after the bag button
 local STRIP_END_MARG = 8   -- gap before the player frame
 
--- Picker: 4 category columns (Items / Spells / Mounts / Professions), each
--- a 2-wide grid of compact rows. No scrolling — the frame height adapts to
--- the tallest column (cell height shrinks if a category is long).
-local MENU_W       = 852  -- 4 cols x 200 + 3 gaps x 8 + 2 x 14 padding
+-- Picker: 5 category columns (Items / Spells / Mounts / Professions / Macros),
+-- each a 2-wide grid of compact rows. No scrolling — the frame height adapts
+-- to the tallest column (cell height shrinks if a category is long).
+local MENU_W       = 1060 -- 5 cols x 200 + 4 gaps x 8 + 2 x 14 padding
 local MENU_H_MAX   = 460
 local COL_W        = 200
 local COL_GAP      = 8
@@ -94,8 +94,9 @@ local GROUP_NAMES = {
     spell = "Spells",
     mount = "Mounts",
     prof  = "Professions",
+    macro = "Macros",
 }
-local GROUP_ORDER = { "item", "spell", "mount", "prof" }
+local GROUP_ORDER = { "item", "spell", "mount", "prof", "macro" }
 
 MobileUIDynamicBar = {}
 
@@ -439,20 +440,36 @@ local function BuildEntries()
     table.sort(spells, function(a, b) return a.name < b.name end)
     table.sort(mounts, function(a, b) return a.name < b.name end)
     table.sort(profs, function(a, b) return a.name < b.name end)
+    -- --- Macros (account + character) ----------------------------------
+    local macros = {}
+    local numAccount, numChar = GetNumMacros()
+    numAccount = numAccount or 0
+    numChar = numChar or 0
+    for i = 1, numAccount + numChar do
+        local mname, micon = GetMacroInfo(i)
+        if mname then
+            table.insert(macros, {
+                kind = "macro", macroIndex = i,
+                name = mname, icon = micon,
+            })
+        end
+    end
+    table.sort(macros, function(a, b) return a.name < b.name end)
     local keptNames = {}
     for _, e in ipairs(spells) do table.insert(keptNames, e.name) end
     for _, e in ipairs(mounts) do table.insert(keptNames, e.name .. "[mount]") end
     for _, e in ipairs(profs) do table.insert(keptNames, e.name .. "[prof]") end
+    for _, e in ipairs(macros) do table.insert(keptNames, e.name .. "[macro]") end
     MobileUI_Debug(string.format(
-        "DynamicBar: spell scan (bookname=%s bookinfo=%s) %d checked -> %d candidates (%d spells, %d mounts, %d profs)",
+        "DynamicBar: spell scan (bookname=%s bookinfo=%s) %d checked -> %d candidates (%d spells, %d mounts, %d profs, %d macros)",
         tostring(GetSpellBookItemName ~= nil), tostring(GetSpellBookItemInfo ~= nil),
-        checked, #spells + #mounts + #profs, #spells, #mounts, #profs))
+        checked, #spells + #mounts + #profs + #macros, #spells, #mounts, #profs, #macros))
     MobileUI_Debug("DynamicBar: kept: " .. table.concat(keptNames, ", "))
     if #rejected > 0 then
         MobileUI_Debug("DynamicBar: candidate-rejected: " .. table.concat(rejected, ", "))
     end
     local out = {}
-    for _, t in ipairs({ items, spells, mounts, profs }) do
+    for _, t in ipairs({ items, spells, mounts, profs, macros }) do
         for _, e in ipairs(t) do table.insert(out, e) end
     end
     return out
@@ -474,6 +491,10 @@ local function ShowEntryTooltip(cell, entry)
             else
                 GameTooltip:SetItemByID(entry.id)
             end
+        elseif entry.kind == "macro" then
+            -- No macro tooltip API in 3.3.5a (SetMacro does not exist);
+            -- show the macro name as a fallback.
+            GameTooltip:SetText(entry.name or "Macro", 1, 1, 1)
         elseif entry.spellbookID then
             -- GetSpellBookItemInfo's 2nd return (spellID) is nil on this
             -- client and GetSpellInfo has no spellID return (9-value form),
@@ -648,7 +669,7 @@ end
 -- Fill the category columns from the current entries. Cell height adapts so
 -- the tallest column fits the frame (no scrolling).
 local function PopulateColumns()
-    local byKind = { item = {}, spell = {}, mount = {}, prof = {} }
+    local byKind = { item = {}, spell = {}, mount = {}, prof = {}, macro = {} }
     for _, e in ipairs(entries) do
         local t = byKind[e.kind]
         if t then table.insert(t, e) end
@@ -712,7 +733,7 @@ local function OpenPicker(btnIndex)
     if InCombatLockdown() then
         menuHint:SetText("Assigning is disabled in combat.")
     elseif #entries == 0 then
-        menuHint:SetText("No usable items or buff spells found.")
+        menuHint:SetText("No usable items, spells, or macros found.")
     else
         menuHint:SetText("First tap: tooltip. Second tap: assign.")
     end
@@ -780,6 +801,12 @@ AssignEntry = function(entry)
         -- is now on the cursor — put it back where this item came from.
         if GetCursorInfo() then PickupContainerItem(entry.c, entry.s) end
         MobileUI_Debug(string.format("DynamicBar: assigned item '%s' to btn %d (slot %d)",
+            entry.name, pickerButton, slot))
+    elseif entry.kind == "macro" then
+        if PickupMacro then PickupMacro(entry.macroIndex) end
+        if PlaceAction then PlaceAction(slot) end
+        if GetCursorInfo() then ReturnCursorContent() end -- exchange leftover
+        MobileUI_Debug(string.format("DynamicBar: assigned macro '%s' to btn %d (slot %d)",
             entry.name, pickerButton, slot))
     else
         local pickup = PickupSpellBookItem or PickupSpell
