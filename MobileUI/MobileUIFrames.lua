@@ -419,7 +419,7 @@ function MobileUIFrames.ApplyPartyFrames()
     partyFrame:ClearAllPoints()
     -- TOPRIGHT -20,-80: right edge aligned with button 15's column (right
     -- edge at -20), top 2 units below the menu bar's bottom edge (y=78).
-    partyFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -20, -80)
+    partyFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -20, -90)
     -- Container must have explicit size: 128 = PartyMemberFrame width,
     -- 242 = total unscaled stack height (4 frames at 53 + 3 gaps at ~10).
     -- Without this, the 0×0 container puts TOPLEFT at the right screen edge,
