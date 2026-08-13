@@ -42,7 +42,7 @@ local ACTION2_BUTTONS = {
 -- pet frame (PartyFrame.xml) — a vertical column on the LEFT side, which on
 -- this layout collides with the quest tracker under the map. The layout
 -- reparents all four into a scaled container parked in the empty strip on
--- the right edge: below the 2-row menu bar (TOPRIGHT -8,-8, 180x70 -> bottom
+-- the right edge: below the 2-row menu bar (TOPRIGHT -8,-8, 200x70 -> bottom
 -- at y=78 from top) and above the top of the action arc, button 15
 -- (BOTTOMRIGHT -20,316, 51x51 -> top at y=367 from bottom). On the 1128x634
 -- screen that strip is ~189 units tall; 4 members chain at 83 units each
@@ -58,6 +58,7 @@ local MICRO_BUTTONS = {
     "CharacterMicroButton", "SpellbookMicroButton", "TalentMicroButton",
     "AchievementMicroButton", "QuestLogMicroButton", "SocialsMicroButton",
     "PVPMicroButton", "LFDMicroButton", "MainMenuMicroButton", "HelpMicroButton",
+    "ChallengesMicroButton", "PathToAscensionMicroButton",  -- Ascension custom
 }
 local BAG_BUTTONS = {
     "MainMenuBarBackpackButton", "CharacterBag0Slot", "CharacterBag1Slot",
