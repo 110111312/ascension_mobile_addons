@@ -2,12 +2,13 @@
 -- Hides the stock extra action bars and bonus action bar, PARKS the stock
 -- main menu bar + art frame off-screen (shown — the scatter buttons 1-10
 -- stay children of MainMenuBarArtFrame, never reparented, so a hidden
--- parent would hide them), and parks the bottom-left bar's tail buttons
--- (6-12) off-screen. Runs a per-frame guard OnUpdate that re-hides
--- everything the client re-shows, re-asserts the stance/stealth flip poll
--- (delegated to MobileUIActionFlip), and keeps MultiBarBottomLeft shown
--- (its scatter buttons are children). Pauses protected-frame enforcement
--- during combat lockdown to avoid taint.
+-- parent would hide them), parks the main bar's non-scatter tail buttons
+-- (ActionButton11/12, "-"/"=") off-screen, and parks the bottom-left bar's
+-- tail buttons (6-12) off-screen. Runs a per-frame guard OnUpdate that
+-- re-hides everything the client re-shows, re-asserts the stance/stealth
+-- flip poll (delegated to MobileUIActionFlip), and keeps MultiBarBottomLeft
+-- shown (its scatter buttons are children). Pauses protected-frame
+-- enforcement during combat lockdown to avoid taint.
 
 MobileUIGuard = {}
 
@@ -91,12 +92,34 @@ local function ParkMainMenuBar()
     if art and not art:IsShown() then art:Show() end
 end
 
+-- Park the main bar's non-scatter tail buttons (ActionButton11/12, keys "-"
+-- and "=") off-screen. They are NOT scattered (Artemis has no "-"/"=" virtual
+-- keys — scatter spots 11/12 are fed from MultiBarBottomLeft buttons), but
+-- their stock chain anchor follows ActionButton10 (each button's LEFT is
+-- anchored to the previous button's RIGHT), so once button 10 is repositioned
+-- to the arc, buttons 11/12 render right next to it on screen. Give them
+-- their own independent off-screen anchor, exactly like the bottom-left
+-- bar's tail buttons (6-12). They stay SHOWN (never Hide — unlike the
+-- bottom-left tail, their actions DO change with the actionpage flip, so an
+-- addon-context Hide() would taint them and block the client's self:Show()
+-- on stealth/unstealth; SetPoint on a protected frame is clean).
+local function ParkMainBarTail()
+    for i = 11, 12 do
+        local b = _G["ActionButton" .. i]
+        if b then
+            b:ClearAllPoints()
+            b:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", -3000, -3000)
+        end
+    end
+end
+
 function MobileUIGuard:Apply()
     for _, name in ipairs(HIDE_FRAMES) do
         local f = _G[name]
         if f then f:Hide() end
     end
     ParkMainMenuBar()
+    ParkMainBarTail()
     EnsureBarShown()
     HideBar2Tail()
     ParkBar2Tail()
@@ -152,6 +175,18 @@ function MobileUIGuard:Apply()
             end
             local art = _G["MainMenuBarArtFrame"]
             if art and not art:IsShown() then art:Show() end
+            -- ActionButton11/12 (main bar tail, "-"/"="): keep parked
+            -- off-screen — re-park if the client re-anchored them on screen.
+            for i = 11, 12 do
+                local b = _G["ActionButton" .. i]
+                if b then
+                    local l = b:GetLeft()
+                    if l and l > -1000 then
+                        b:ClearAllPoints()
+                        b:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", -3000, -3000)
+                    end
+                end
+            end
             -- BonusActionBarFrame hide (out of combat only): belt-and-
             -- suspenders for the MainMenuBar.busy clear at the top of this
             -- OnUpdate. The busy clear is what makes the client's own

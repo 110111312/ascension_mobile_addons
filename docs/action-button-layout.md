@@ -24,7 +24,16 @@ Action buttons are arranged in a quarter-circle arc centered at the bottom-right
 > bottom-left bar buttons 1-5 in order — the arc reads **1-2-3-4-5** left to
 > right (keybinds Q/E/R/T/F). The `-`/`=` keybinds still work from a physical
 > keyboard (keybinds fire actions directly); the buttons are just not shown in
-> the mobile arc.
+> the mobile arc. They stay children of `MainMenuBarArtFrame` (never
+> reparented) and the guard parks them off-screen (`ActionButton11/12`,
+> same `-3000,-3000` spot as the bottom-left tail). Parking is required
+> because their stock anchor chain follows `ActionButton10` — once button 10
+> is repositioned to the arc, 11/12 render right next to it on screen
+> otherwise. They are parked SHOWN, never hidden: unlike the bottom-left
+> tail, their actions DO change with the actionpage flip (stealth slots
+> 83/84), so an addon-context `Hide()` would taint them and block the
+> client's `self:Show()` on the flip — `SetPoint` on a protected frame is
+> clean, `Hide()` is not.
 
 ## Action Bar 2 — Buttons 11–15 (MultiBarBottomLeftButton1–5)
 
