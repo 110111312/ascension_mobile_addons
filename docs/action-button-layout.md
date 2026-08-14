@@ -136,10 +136,26 @@ the `flipFrame` event watcher is a fast path on top.
   buttons' stock `useparent-actionpage` walk (or the client's own actionpage
   writes) then resolves the same page in `ActionButton_CalculateAction`.
   Display **and** click follow the same slots the keypress targets.
-- **Never write plain Lua fields on the buttons** (`isBonus`, `action`): doing
-  so **taints** the secure action chain on this client — the next click errors
-  with "AddOn 'MobileUI' tainted the call of the secure function 'UseAction()'"
-  and the cast is blocked. Attributes are the only safe channel.
+- **Plain Lua field writes on the buttons taint them — but only `action` is
+  written, and its taint is COSMETIC (confirmed via `issecurevariable`
+  diagnostics).** The poll and `ApplyFlip` write `btn.action = <slot>` to fix
+  the stale usable tint / one-state-behind icon (see the display-fix section
+  below). `issecurevariable(btn, "action")` returns `secure=nil src=MobileUI`,
+  i.e. the `action` field is tainted by the addon — the ONLY tainted field
+  (everything else — `showgrid`, `Show`, `OnEvent`, the stock
+  `ActionButton_Update*` globals — reads `secure=1 src=nil`). The consequence
+  is a **cosmetic console error** at in-combat unstealth, "AddOn 'MobileUI'
+  prevented the call of the secure function 'ActionButton1:Show()'": the
+  client's `ActionButton_Update` reads the tainted `self.action`, taints its
+  execution path, and its `Show()` is blocked. This does NOT break clicks
+  (click resolution reads the bridge's `actionpage` attribute, which is
+  clean), icons, or the tint — the error is console-only. Clicks are NOT
+  blocked (the old "next click errors with UseAction()" concern does not
+  apply to `action`; only `SetParent`/`SetAttribute`/`Show`/`Hide` from
+  addon context on the button produce that). Trade-off: removing the
+  `btn.action` writes silences the error but regresses the tint (buttons
+  stay grey for seconds after in-combat unstealth). Decision: keep the
+  writes, accept the cosmetic error.
 - On revert, the attribute is set to an explicit **1**, not cleared with `nil`:
   the client's C-side keypress resolver caches the attribute, and a `nil`-clear
   leaves it stuck on the bonus page after unstealth (keys then keep casting
@@ -240,6 +256,27 @@ With stock `OnEvent` back, all of these — and every other case (mounts,
 vehicles, inventory changes, equipment borders, stack counts, the range dot,
 procs) — are handled by the client's own event dispatch, the same path the
 default action bar uses.
+
+**Stale display after flips — the poll's `btn.action` + `icon:SetTexture`
+fix (Direction A follow-up).** Event dispatch order on this client is
+**buttons-first, then `flipFrame`**: the buttons' stock
+`UPDATE_BONUS_ACTIONBAR` `OnEvent` runs BEFORE `ApplyFlip` sets the bridge's
+`actionpage`, so the buttons resolve against the PREVIOUS state's page and
+set `self.action` one state behind (stealth-enter shows normal icons,
+unstealth shows stealth icons, oscillating). The client also fires
+`ACTIONBAR_UPDATE_USABLE` BEFORE the poll corrects things, so after
+in-combat unstealth the buttons' tint is computed from stale `self.action`
+(stealth slots 73-82, now unusable) → buttons 2/4 stay grey for a few
+seconds until the server sends another usability update. The 0.25s poll
+(guard `OnUpdate`) fixes both on every state change, in and out of combat:
+it sets `btn.action` (plain field — taints, see the taint note above) and
+`icon:SetTexture(GetActionTexture(action))` (safe, ArcAssign-verified).
+`ApplyFlip` also sets `btn.action` synchronously at event time so the
+client's `ACTIONBAR_UPDATE_USABLE` reads the corrected value and tints
+immediately. `ChangeActionBarPage` is NOT used — the Ascension client's
+state-driver manager processes `ACTIONBAR_PAGE_CHANGED` SYNCHRONOUSLY, so
+any page toggle corrupts the bridge's `actionpage` (e.g. page 6 →
+`actionpage=6`, buttons show MultiBarBottomLeft skills).
 
 **Why `OnEvent` is kept (Direction A):** the phase-3/4 taint cascade
 (blocked `self:Show()` mid-combat) was **self-inflicted** — it happened

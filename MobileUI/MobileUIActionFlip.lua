@@ -165,6 +165,19 @@ local FLIP_HANDLER_SNIPPET = [[
     else
         self:SetAttribute("actionpage", 1)
     end
+    -- Set showgrid=1 and Show on each ActionButton (secure context —
+    -- does NOT taint the buttons, unlike SetAttribute/Show from addon code).
+    -- This keeps empty buttons visible and shown, replacing the old
+    -- btn:SetAttribute("showgrid",1) + btn:Show() in the apply loop
+    -- which tainted the secure buttons and blocked the client's mid-combat
+    -- self:Show() call (the 'ActionButton1:Show()' taint error).
+    for i = 1, 10 do
+        local btn = self:GetFrameRef("btn" .. i)
+        if btn then
+            btn:SetAttribute("showgrid", 1)
+            btn:Show()
+        end
+    end
 ]]
 local flipNumPages = NUM_ACTIONBAR_PAGES or 6
 local flipParts = {}
@@ -207,9 +220,20 @@ function MobileUIActionFlip.InstallFlipBridge()
         art:SetAttribute("useparent-actionpage", true)
 
         -- Set the _onstate-actionpage snippet (copies state-actionpage
-        -- to actionpage on the handler). OnAttributeChanged is already
-        -- set to SecureHandler_StateOnAttributeChanged by the template.
+        -- to actionpage on the handler, and sets showgrid=1 + Show on
+        -- each ActionButton via frame refs — secure context, no taint).
+        -- OnAttributeChanged is already set to
+        -- SecureHandler_StateOnAttributeChanged by the template.
         h:SetAttribute("_onstate-actionpage", FLIP_HANDLER_SNIPPET)
+
+        -- Store frame refs to ActionButton1-10 so the secure snippet can
+        -- SetAttribute("showgrid",1) and Show() on them without tainting.
+        for i = 1, 10 do
+            local btn = _G["ActionButton" .. i]
+            if btn then
+                h:SetFrameRef("btn" .. i, btn)
+            end
+        end
 
         RegisterStateDriver(h, "actionpage", FLIP_DRIVER_COND)
 
@@ -300,23 +324,16 @@ function MobileUIActionFlip.ApplyFlip()
     -- The buttons read actionpage via the useparent walk:
     --   button -> MainMenuBarArtFrame -> handler
     -- Setting actionpage directly on the BUTTONS would shadow the handler's
-    -- value — once set, SecureButton_GetModifiedAttribute returns the
-    -- button's own value and never walks to the handler. In combat,
-    -- SetAttribute on buttons is silently blocked, so we can't clear a
-    -- stale button-level actionpage, and the walk is permanently stuck
-    -- on the old value. By setting only the handler, the buttons always
-    -- read the handler's current value (updated by the driver in combat).
+    -- value AND taint the button (SetAttribute from addon context on a
+    -- secure frame taints it, blocking the client's mid-combat Show()).
     --
-    -- Also clear any stale actionpage on the buttons from prior sessions
-    -- where the old code pushed it directly. This is a no-op if the button
-    -- has no own actionpage (the normal case after this fix).
+    -- NO SetAttribute on the buttons at all — not even to clear stale
+    -- values. SetAttribute("actionpage", nil) from addon context taints
+    -- the button just as much as setting a non-nil value. If a stale
+    -- button-level actionpage exists from a prior session, the useparent
+    -- walk would read it instead of the handler, but this is a one-time
+    -- migration issue (the current code never pushes actionpage to buttons).
     if not InCombatLockdown() then
-        for i = 1, 10 do
-            local btn = _G["ActionButton" .. i]
-            if btn and btn:GetAttribute("actionpage") ~= nil then
-                btn:SetAttribute("actionpage", nil)
-            end
-        end
         if flipBarFrame then
             flipBarFrame:SetAttribute("actionpage", fp)
         end

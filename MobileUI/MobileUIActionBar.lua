@@ -49,7 +49,11 @@ function MobileUIActionBar:Apply()
             btn:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", cfg.x, cfg.y)
             btn:SetSize(cfg.size, cfg.size)
             btn:SetFrameStrata("MEDIUM")
-            btn:Show()
+            -- NO btn:Show() or btn:SetAttribute here — those taint the
+            -- secure button from addon context, blocking the client's
+            -- mid-combat self:Show() (the 'ActionButton1:Show()' error).
+            -- showgrid=1 and Show() are set by the SecureHandlerStateTemplate
+            -- bridge's _onstate-actionpage snippet (secure context, no taint).
             -- Skin via embedded LibButtonFacade
             SkinButton(btn, {
                 Icon = _G["ActionButton" .. i .. "Icon"],
@@ -66,9 +70,8 @@ function MobileUIActionBar:Apply()
             if nm then nm:Hide() end
             if hotkey then HOTKEY_FRAMES[#HOTKEY_FRAMES+1] = hotkey end
             if nm then HOTKEY_FRAMES[#HOTKEY_FRAMES+1] = nm end
-            -- showgrid=1: keep empty buttons visible (the client's Update
-            -- hides empty slots when showgrid==0).
-            btn:SetAttribute("showgrid", 1)
+            -- showgrid=1 and Show() are set by the bridge's secure snippet,
+            -- not here (SetAttribute from addon context taints the button).
             btn:SetScript("OnEnter", NoActionTooltipOnEnter)
             -- Register UPDATE_BONUS_ACTIONBAR so the button's stock OnEvent
             -- calls ActionButton_UpdateAction on stealth entry/unstealth
