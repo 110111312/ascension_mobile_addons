@@ -6,8 +6,9 @@
 -- For the 10 main bar buttons, the action slot is resolved via
 -- ResolveScatterAction to respect stance/stealth flipping — assigning to
 -- whichever page is currently active (stealth bar if in stealth, main bar
--- if not). After assignment, RefreshScatterButtons redraws the icon (these
--- buttons have OnEvent cleared so the client won't update them).
+-- if not). After assignment the icon is refreshed directly (SetTexture is
+-- not a tainting op) as a belt-and-suspenders for clients where
+-- ACTIONBAR_SLOT_CHANGED doesn't re-render the button.
 --
 -- Cast block: same Disable() approach as the DynamicBar. On hold
 -- (RightButton), Disable() the button so the stock OnClick (UseAction) from
@@ -471,11 +472,10 @@ AssignArcEntry = function(entry)
         if GetCursorInfo() then ReturnCursorContent() end
         MobileUI_Debug(string.format("ArcAssign: assigned macro '%s' to slot %d", entry.name, slot))
     end
-    -- Direct icon refresh for ALL buttons. We can't rely on
-    -- RefreshScatterButtons here: out of combat it calls
-    -- ActionButton_UpdateAction, which only updates when the action SLOT
-    -- changes (page flip) — not when the slot CONTENT changes (assignment).
-    -- SetTexture is not a tainting op, so this is safe for all buttons.
+    -- Direct icon refresh for ALL buttons (belt-and-suspenders): on this
+    -- Ascension client ACTIONBAR_SLOT_CHANGED may not re-render the button,
+    -- so set the texture directly from GetActionTexture. SetTexture is not
+    -- a tainting op, so this is safe for all buttons (stock OnEvent kept).
     if pickerCtx.btn then
         local icon = _G[pickerCtx.btn:GetName() .. "Icon"]
         local tex = GetActionTexture(pickerCtx.slot)

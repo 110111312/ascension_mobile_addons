@@ -833,10 +833,10 @@ AssignEntry = function(entry)
     end
     local t, id = GetActionInfo(slot)
     MobileUI_Debug(string.format("DynamicBar: slot %d now type=%s id=%s", slot, tostring(t), tostring(id)))
-    -- Manual icon refresh: on this Ascension client ACTIONBAR_SLOT_CHANGED
-    -- may not trigger the button's OnEvent to update the icon. Set the
-    -- texture directly from GetActionTexture (same approach as
-    -- RefreshScatterButtons; SetTexture is not a tainting op).
+    -- Manual icon refresh (belt-and-suspenders): on this Ascension client
+    -- ACTIONBAR_SLOT_CHANGED may not trigger the button's OnEvent to update
+    -- the icon. Set the texture directly from GetActionTexture (SetTexture
+    -- is not a tainting op).
     local pb = _G["MultiBarBottomLeftButton" .. pickerButton]
     local icon = pb and _G["MultiBarBottomLeftButton" .. pickerButton .. "Icon"]
     local tex = GetActionTexture(slot)

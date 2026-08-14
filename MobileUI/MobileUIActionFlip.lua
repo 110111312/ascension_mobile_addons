@@ -1,14 +1,40 @@
--- MobileUIActionFlip.lua - Stance/stealth flip follower + SecureStateDriver bridge
+-- MobileUIActionFlip.lua - Stance/stealth flip diagnostics + guard poll
 -- The Ascension client resolves keypresses internally (C-side): in stealth
 -- '-' hits the stealth bar, which on this client is the BONUS bar
 -- (GetBonusBarOffset() = 1 -> page 7, slots 73-84) — NOT an action-bar page.
 -- GetActionBarPage() stays pinned at 1 and pages 2-5 are empty; the default
--- UI's "stealth bar" is BonusActionBarFrame. The reparented scatter buttons
--- never recompute on their own, so display and click stay on page 1 while
--- keypresses go elsewhere. Driven by a 0.25s state poll in guardFrame's
--- OnUpdate (this client fires no page/shapeshift events), the follower
--- mirrors the client's choice via the 'actionpage' ATTRIBUTE — the secure
--- channel for configuring secure buttons.
+-- UI's "stealth bar" is BonusActionBarFrame. The scatter buttons (never
+-- reparented, stock OnEvent) only recompute on the events they register, so
+-- display and click stay on page 1 while keypresses go elsewhere. Driven by
+-- a 0.25s state poll in guardFrame's OnUpdate (this client fires no
+-- page/shapeshift events), the follower mirrors the client's choice via the
+-- 'actionpage' ATTRIBUTE — the secure channel for configuring secure buttons.
+--
+-- DISPLAY OWNERSHIP (Direction A, 2026-08): the arc buttons keep their stock
+-- OnEvent — the CLIENT owns icon / usable tint / cooldown / checked state /
+-- attack flash / C-side proc glow, exactly like the dynamic strip (slots
+-- 66-71) and the arc's own 11-15 buttons, which have always run client-owned
+-- with zero combat taint. The addon only:
+--   * repositions the buttons (apply, out of combat) — never reparents
+--     (SetParent on a secure button taints it and blocks the client's own
+--     mid-combat Show(), the phase-3/4 error);
+--   * mirrors the page for diagnostics only — the CLIENT handles the
+--     flip via the actionpage attribute bridge (SecureHandlerStateTemplate
+--     handler frame with RegisterStateDriver);
+--   * never calls ActionButton_UpdateAction itself: it hits protected
+--     Show()/Hide() from addon context, which taints the button and re-blocks
+--     the client's Show(). The client's own OnEvent (UPDATE_SHAPESHIFT_FORM
+--     -> ActionButton_UpdateAction) re-resolves and re-renders the flip
+--     via the bridge, in and out of combat.
+-- The old hand-rolled display layer (RefreshScatterButtons / ReassertFlash)
+-- was deleted: it re-implemented ActionButton_Update* and drifted — the
+-- usable tint never refreshed on retarget (out-of-combat refresh called
+-- ActionButton_UpdateAction, a no-op when the slot's action hadn't changed),
+-- and the per-frame Flash hide killed the client's C-side proc glow. With
+-- stock OnEvent back, the client's own event dispatch fixes both by
+-- construction, plus every other case (mounts, vehicles, inventory, range
+-- dot, stacks, equipment borders, procs).
+--
 -- TAINT RULES (learned the hard way):
 --   * Writing plain Lua fields that ActionButton_CalculateAction READS
 --     (e.g. isBonus) taints the secure click chain: the next click errors
@@ -18,22 +44,20 @@
 --     — even self.action, which CalculateAction never reads: after the
 --     write, the client's own later SetAttribute on the button errors
 --     "prevented the call of the secure function 'ActionButtonN:SetAttribute()'"
---     and its page management breaks. So the display must be owned via
---     non-protected regions only (icon/cooldown textures, vertex color)
---     and the client must be prevented from hiding/re-rendering the
---     buttons from their stale self.action: the buttons' OnEvent is
---     cleared at apply (the client never dispatches their updates — which
---     also stops its Show()/Hide() from being blocked on our tainted
---     buttons), showgrid=1 keeps its Update from hiding them, and an
---     event/poll-driven re-assert (RefreshScatterButtons on flipFrame events
---     + guard poll) redraws icon/tint/cooldown from the attr page (usability
---     tints computed from the CORRECT action). NOT per-frame: the cooldown
---     spiral is widget-internal after SetCooldown.
+--     and its page management breaks.
+--   * SetVertexColor on the stock icon/NormalTexture and SetCooldown on the
+--     stock Cooldown frame taint the button (the client's later Show()/Hide()
+--     mid-combat is then blocked). SetTexture on the icon does NOT taint
+--     (verified). LBF's skin writes on its own textures do NOT taint (the
+--     strip buttons prove it). So: never write the stock regions' vertex
+--     colors or cooldown from addon code; let the client render.
 
 MobileUIActionFlip = {}
 
 local flipFrame
-local flipHandlers = {}
+local flipBarFrame
+local flipBarOldParent
+local flipArtOldUseparentActionpage
 
 -- The CLIENT owns the stance->bar mapping; we only mirror it. Generic rules
 -- in priority order — no per-class guessing for normal cases:
@@ -94,206 +118,47 @@ local function DelayedDump(seconds, label)
 end
 MobileUIActionFlip.DelayedDump = DelayedDump
 
--- Resolve a scatter button's action slot exactly as ActionButton_CalculateAction
--- will at click time (actionpage attribute first, then GetActionBarPage), so
--- display and click always agree. Returns the actionID and the icon texture.
-local function ResolveScatterAction(btn, fallbackId)
-    local id = btn:GetID()
-    if not id or id < 1 then id = fallbackId end
-    local attrPage = tonumber(SecureButton_GetModifiedAttribute(btn, "actionpage"))
-    local page = attrPage or (GetActionBarPage() or 1)
-    local action = id + (page - 1) * (NUM_ACTIONBAR_BUTTONS or 12)
-    return action, _G[btn:GetName() .. "Icon"]
-end
-
-local function RefreshScatterButtons()
-    if InCombatLockdown() then
-        -- OnEvent is CLEARED at apply (see ApplyActionBar), so the client
-        -- never dispatches ActionButton_Update on these buttons -- which means
-        -- it never calls self:Show()/self:Hide() (blocked on our tainted
-        -- buttons) and never renders icon/tint/cooldown. We own the display:
-        -- icon texture, usability tint, and cooldown, all from the CORRECT
-        -- (attribute-resolved) action via ResolveScatterAction.
-        --
-        -- Taint: SetVertexColor on the icon/NormalTexture and SetCooldown on
-        -- the Cooldown frame all taint the button. This is SAFE because OnEvent
-        -- is cleared: the client never calls self:Show() on the tainted button,
-        -- so the taint never surfaces as a blocked-call error. This is the same
-        -- approach the original code used (minus the per-frame cascade).
-        --
-        -- Trigger: event-driven (flipFrame OnEvent: UPDATE_BONUS_ACTIONBAR,
-        -- UPDATE_SHAPESHIFT_FORM, ACTIONBAR_UPDATE_COOLDOWN, etc.) plus the
-        -- 0.25s guard poll. NOT per-frame -- the cooldown spiral animation is
-        -- widget-internal after SetCooldown, so event-driven re-sync is enough.
-        for i = 1, 12 do
-            local btn = _G["ActionButton" .. i]
-            if btn then
-                local action, icon = ResolveScatterAction(btn, i)
-                local tex = GetActionTexture(action)
-                if tex then
-                    icon:SetTexture(tex)
-                    icon:Show()
-                    local isUsable, notEnoughMana = IsUsableAction(action)
-                    if isUsable then
-                        icon:SetVertexColor(1.0, 1.0, 1.0)
-                    elseif notEnoughMana then
-                        icon:SetVertexColor(0.5, 0.5, 1.0)
-                    else
-                        icon:SetVertexColor(0.4, 0.4, 0.4)
-                    end
-                    local nt = _G[btn:GetName() .. "NormalTexture"]
-                    if nt then
-                        if notEnoughMana then
-                            nt:SetVertexColor(0.5, 0.5, 1.0)
-                        else
-                            nt:SetVertexColor(1.0, 1.0, 1.0)
-                        end
-                    end
-                    -- Cooldown: we own this (OnEvent cleared, the client
-                    -- won't update it). SetCooldown starts the widget's
-                    -- internal spiral animation; ACTIONBAR_UPDATE_COOLDOWN
-                    -- events (flipFrame registers them) re-trigger
-                    -- RefreshScatterButtons to re-sync. Taints the button, but
-                    -- with OnEvent cleared the client never calls self:Show().
-                    local cd = _G[btn:GetName() .. "Cooldown"]
-                    if cd then
-                        local start, duration, enable = GetActionCooldown(action)
-                        if start and duration and duration > 0 and enable == 1 then
-                            if cd.start ~= start or cd.duration ~= duration then
-                                cd:SetCooldown(start, duration)
-                                cd.start, cd.duration = start, duration
-                            end
-                            if not cd:IsShown() then cd:Show() end
-                        else
-                            cd:Hide()
-                            cd.start, cd.duration = nil, nil
-                        end
-                    end
-                else
-                    icon:Hide()
-                end
-            end
-        end
-        -- Diagnostic: which page-1 slots actually have content, and which
-        -- buttons drew an icon (the user sees only some buttons populated
-        -- after the in-combat flip — need to know if the slots are empty or
-        -- the draw is failing). Only when debug is enabled.
-        if MobileDB and MobileDB.debug then
-            local drawn, slots = {}, {}
-            for i = 1, 10 do
-                if GetActionTexture(i) then slots[#slots + 1] = i end
-            end
-            for i = 1, 12 do
-                local btn = _G["ActionButton" .. i]
-                if btn then
-                    local icon = _G[btn:GetName() .. "Icon"]
-                    if icon and icon:IsShown() then drawn[#drawn + 1] = i end
-                end
-            end
-            MobileUI_Debug("Refresh: slotTex1_10={" .. table.concat(slots, ",") .. "} drawn={" .. table.concat(drawn, ",") .. "}")
-            ButtonStateDump("at-refresh")
-        end
-    else
-        for i = 1, 12 do
-            local btn = _G["ActionButton" .. i]
-            if btn then
-                local ok, err = pcall(ActionButton_UpdateAction, btn)
-                if not ok then
-                    MobileUI_Debug("Flip: ActionButton" .. i .. " update failed: " .. tostring(err))
-                end
-            end
-        end
-    end
-end
-MobileUIActionFlip.RefreshScatterButtons = RefreshScatterButtons
-
--- Flash (casting/attack glow) re-assert, called EVERY FRAME from the guard
--- OnUpdate (below). The client's ActionButton_UpdateFlash never runs (OnEvent
--- cleared) and cast events are unreliable on this server, so the stateflash
--- attribute latches at 1 after a cast and the glow sticks forever. Re-assert
--- it here from the attribute-resolved action: Show while casting/attacking/
--- repeating, Hide otherwise — so it turns off within a frame of the cast
--- ending. Flash is a plain texture region, so Show/Hide is taint-safe
--- (SetVertexColor/SetCooldown are the tainting ops, not texture Show/Hide).
--- Flash blink state (module-local): the red attack/auto-shot flash blinks
--- (stock behavior) instead of staying solid red. Toggled on a 0.5s timer in
--- ReassertFlash; resets to "on" whenever no flash is active so the glow
--- appears immediately when auto-attack starts.
-local flashBlinkT, flashBlinkOn = 0, true
-
-local function ReassertFlash(elapsed)
-    local anyFlash = false
-    for i = 1, 12 do
-        local btn = _G["ActionButton" .. i]
-        if btn then
-            local action = ResolveScatterAction(btn, i)
-            -- Red flash: auto-attack / auto-shot ONLY, and only while they are
-            -- actually active (user preference — the red UI-QuickslotRed glow
-            -- is not shown for spell casts). IsAttackAction/IsAutoRepeatAction
-            -- are SLOT-CONTENT checks (1 whenever the attack/auto-shot ability
-            -- is in the slot), so they must be ANDed with IsCurrentAction
-            -- (1 while the repeating action is actually repeating) — otherwise
-            -- the attack button glows red permanently.
-            local flash = IsCurrentAction(action) and (IsAttackAction(action) or IsAutoRepeatAction(action))
-            if flash then anyFlash = true end
-            local fl = _G[btn:GetName() .. "Flash"]
-            if fl then
-                if flash and flashBlinkOn then
-                    if not fl:IsShown() then fl:Show() end
-                else
-                    if fl:IsShown() then fl:Hide() end
-                end
-            end
-            -- Clear a latched checked state: the client checks the button
-            -- while casting (the casting highlight) but the uncheck runs via
-            -- the OnEvent-driven ActionButton_UpdateState, which is cleared
-            -- at apply — so the checked glow (RoundButtonChecked / Border)
-            -- sticks forever. Clear it whenever the action is not currently
-            -- being cast, so the glow is transient (shows during the cast,
-            -- gone after). SetChecked is a plain state setter, not a
-            -- protected call, so this is taint-safe.
-            if not IsCurrentAction(action) and btn:GetChecked() then btn:SetChecked(nil) end
-        end
-    end
-    -- Blink: advance the timer only while a flash is active; reset to "on"
-    -- when idle so the glow appears immediately at attack start.
-    if anyFlash then
-        flashBlinkT = flashBlinkT + (elapsed or 0)
-        if flashBlinkT >= 0.5 then
-            flashBlinkT = 0
-            flashBlinkOn = not flashBlinkOn
-        end
-    else
-        flashBlinkT, flashBlinkOn = 0, true
-    end
-end
-
 -- ---- SecureStateDriver bridge (combat-safe attribute writes) ----
 -- Our own SetAttribute("actionpage", N) on the ActionButtons is SILENTLY
 -- blocked during combat lockdown on this client (verified via readback:
--- after ApplyFlip writes 1 mid-combat, the attribute still reads 7; pcall
--- can't catch it because secure-call blocking is not a Lua error). The one
--- stock mechanism that CAN write attributes on protected frames during
--- combat is the SecureStateDriver manager (a secure frame). But the driver
--- manages 'state-<name>' attributes, which ActionButton_CalculateAction
--- does NOT read (it reads plain 'actionpage' via the useparent walk). So:
---   - each scattered ActionButton1-10 is reparented under a tiny
---     SecureHandlerStateTemplate frame (ours, created out of combat);
---   - RegisterStateDriver(handler, "actionpage", COND) makes the manager
---     re-evaluate COND every 0.2s (and immediately on bonus/stealth/page
---     events) and securely SetAttribute 'state-actionpage' on the handler
---     — even during combat lockdown;
---   - the handler's template-wired _onstate-actionpage snippet copies
---     'state-actionpage' -> 'actionpage' on the handler (restricted
---     closure: it runs in a secure context, so its SetAttribute is allowed
+-- after writing 1 mid-combat, the attribute still reads 7; pcall can't
+-- catch it because blocking isn't a Lua error). The one stock mechanism
+-- that CAN write attributes on protected frames during combat is the
+-- SecureStateDriver manager (a secure frame). But the driver manages
+-- 'state-<name>' attributes, which ActionButton_CalculateAction does NOT
+-- read (it reads plain 'actionpage'). So:
+--   - a dedicated SecureHandlerStateTemplate frame is created as the
+--     bridge target. This is the ONLY frame type that works with
+--     RegisterStateDriver on this client — neither MainMenuBar nor
+--     MainMenuBarArtFrame is protected, so RegisterStateDriver on either
+--     errors "Invalid 'self' frame handle" (the secure handler snippet
+--     cannot SetAttribute on a non-protected frame);
+--   - MainMenuBarArtFrame (NOT the buttons) is reparented to the handler
+--     frame. MainMenuBarArtFrame is a plain Frame (not a secure button),
+--     so SetParent on it is clean (no taint). The buttons stay children
+--     of MainMenuBarArtFrame (zero taint — SetParent on a secure button
+--     taints it and blocks the client's mid-combat Show());
+--   - RegisterStateDriver(handler, "actionpage", COND) makes the
+--     manager re-evaluate COND and securely SetAttribute 'state-actionpage'
+--     on the handler — even during combat lockdown;
+--   - the handler's OnAttributeChanged (SecureHandler_StateOnAttributeChanged,
+--     inherited from SecureHandlerStateTemplate) runs the _onstate-actionpage
+--     snippet, copying 'state-actionpage' -> 'actionpage' on the handler
+--     (restricted closure: secure context, so its SetAttribute is allowed
 --     in combat too);
---   - the button's stock useparent-actionpage=true walk then reads the
---     handler's 'actionpage' -> CalculateAction, clicks, and our refresh
---     all resolve the same page, in and out of combat.
+--   - MainMenuBarArtFrame gets useparent-actionpage=true so the buttons'
+--     stock useparent-actionpage walk forwards through it:
+--     button -> MainMenuBarArtFrame -> handler (which carries the
+--     bridge's actionpage);
+--   - the buttons then resolve the same page for CalculateAction, clicks,
+--     and the client's own display updates, in and out of combat.
 -- COND mirrors the client generically: [bonusbar:N] -> page 6+N (this
 -- client's stealth/stance bonus bar), [bar:N] -> N (stock page flips),
 -- else an explicit 1 (never nil — a nil-clear left the client's C-side
 -- keypress resolver stuck on the bonus page after unstealth).
+-- Parking: MainMenuBarArtFrame has SetAllPoints(MainMenuBar), so it
+-- follows MainMenuBar off-screen (guard parks at -3000,-3000) regardless
+-- of its parent. The handler frame has no visual elements (invisible).
 local FLIP_HANDLER_SNIPPET = [[
     if newstate then
         self:SetAttribute("actionpage", newstate)
@@ -313,37 +178,73 @@ flipParts[#flipParts + 1] = "1"
 local FLIP_DRIVER_COND = table.concat(flipParts, "; ")
 
 function MobileUIActionFlip.InstallFlipBridge()
-    for i = 1, 10 do
-        local btn = _G["ActionButton" .. i]
-        if btn and not flipHandlers[i] then
-            local h = CreateFrame("Frame", nil, UIParent, "SecureHandlerStateTemplate")
-            h:SetSize(1, 1)
-            h:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
-            h:Show()
-            local ok, err = pcall(function()
-                h:SetAttribute("_onstate-actionpage", FLIP_HANDLER_SNIPPET)
-                RegisterStateDriver(h, "actionpage", FLIP_DRIVER_COND)
-            end)
-            if ok then
-                btn:SetParent(h)
-                flipHandlers[i] = h
-            else
-                MobileUI_Debug("Flip: bridge install failed for ActionButton" .. i .. ": " .. tostring(err))
-                h:Hide()
+    if flipBarFrame then return end
+    local art = _G["MainMenuBarArtFrame"]
+    if not art then
+        MobileUI_Debug("Flip: bridge install failed: MainMenuBarArtFrame not found")
+        return
+    end
+    local ok, err = pcall(function()
+        -- Create a SecureHandlerStateTemplate handler frame — the only
+        -- frame type that works with RegisterStateDriver on this client.
+        local h = CreateFrame("Frame", nil, UIParent, "SecureHandlerStateTemplate")
+        h:Show() -- must be shown so MainMenuBarArtFrame (and its button
+                 -- children) inherit visibility
+
+        -- Reparent MainMenuBarArtFrame (NOT the buttons) to the handler.
+        -- MainMenuBarArtFrame is a plain Frame, not a secure button, so
+        -- SetParent is clean (no taint). The buttons stay children of
+        -- MainMenuBarArtFrame (zero taint). MainMenuBarArtFrame's
+        -- SetAllPoints(MainMenuBar) anchor keeps it off-screen (following
+        -- MainMenuBar which the guard parks at -3000,-3000).
+        flipBarOldParent = art:GetParent()
+        art:SetParent(h)
+
+        -- Forward useparent-actionpage through MainMenuBarArtFrame so the
+        -- buttons' stock useparent-actionpage walk reaches the handler:
+        -- button -> MainMenuBarArtFrame -> handler
+        flipArtOldUseparentActionpage = art:GetAttribute("useparent-actionpage")
+        art:SetAttribute("useparent-actionpage", true)
+
+        -- Set the _onstate-actionpage snippet (copies state-actionpage
+        -- to actionpage on the handler). OnAttributeChanged is already
+        -- set to SecureHandler_StateOnAttributeChanged by the template.
+        h:SetAttribute("_onstate-actionpage", FLIP_HANDLER_SNIPPET)
+
+        RegisterStateDriver(h, "actionpage", FLIP_DRIVER_COND)
+
+        flipBarFrame = h
+    end)
+    if ok then
+        MobileUI_Debug("Flip: bridge installed on SecureHandlerStateTemplate")
+    else
+        MobileUI_Debug("Flip: bridge install failed: " .. tostring(err))
+        -- Restore partial state on failure
+        pcall(function()
+            if flipBarOldParent and art then
+                art:SetParent(flipBarOldParent)
+                flipBarOldParent = nil
             end
-        end
+        end)
     end
 end
 
 function MobileUIActionFlip.UninstallFlipBridge()
-    for i = 1, 10 do
-        local h = flipHandlers[i]
-        if h then
-            UnregisterStateDriver(h, "actionpage")
-            h:Hide()
-            flipHandlers[i] = nil
+    if not flipBarFrame then return end
+    local h = flipBarFrame
+    local art = _G["MainMenuBarArtFrame"]
+    pcall(function()
+        UnregisterStateDriver(h, "actionpage")
+        if art then
+            if art:GetParent() == h and flipBarOldParent then
+                art:SetParent(flipBarOldParent)
+            end
+            art:SetAttribute("useparent-actionpage", flipArtOldUseparentActionpage)
         end
-    end
+    end)
+    flipBarFrame = nil
+    flipBarOldParent = nil
+    flipArtOldUseparentActionpage = nil
 end
 
 -- Gated so the ring buffer isn't flooded: ACTIONBAR_* events fire many
@@ -355,15 +256,31 @@ local lastFlipAttrLog = ""
 
 function MobileUIActionFlip.ApplyFlip()
     if not MobileDB or not MobileDB.layoutEnabled then return end
-    -- The actionpage ATTRIBUTE is now owned by the SecureStateDriver bridge
-    -- above (InstallFlipBridge): the driver's manager is a secure frame, so
-    -- it can SetAttribute during combat lockdown — our own writes cannot
-    -- (verified: SetAttribute on ActionButtons is SILENTLY blocked
-    -- mid-combat on this client; pcall can't catch it because blocking
-    -- isn't a Lua error). Display, click, and keypress all resolve through
-    -- the same attribute, so they always agree, in and out of combat.
-    -- ApplyFlip only mirrors the client's side-effects and re-draws the
-    -- buttons to follow the attribute.
+    -- The actionpage ATTRIBUTE is owned by the SecureStateDriver bridge
+    -- (InstallFlipBridge): the driver's manager is a secure frame, so
+    -- it can SetAttribute during combat lockdown — our own writes to the
+    -- buttons are silently blocked mid-combat (pcall can't catch it;
+    -- blocking isn't a Lua error). Display, click, and keypress all
+    -- resolve through the same attribute, so they always agree.
+    --
+    -- Display is CLIENT-owned (stock OnEvent intact). The stock
+    -- ActionButton_OnEvent calls ActionButton_UpdateAction (which
+    -- re-resolves the action from actionpage and redraws the icon) only
+    -- on ACTIONBAR_PAGE_CHANGED or UPDATE_BONUS_ACTIONBAR — NOT on
+    -- UPDATE_SHAPESHIFT_FORM (which only calls ActionButton_Update with
+    -- the stale self.action). So we register UPDATE_BONUS_ACTIONBAR on
+    -- the buttons (stock doesn't), and set actionpage on the HANDLER
+    -- here (out of combat only — in combat the driver's async update +
+    -- the poll's ChangeActionBarPage kick covers it).
+    --
+    -- CRITICAL: actionpage is set on the HANDLER, NOT on the buttons.
+    -- Setting it on the buttons shadows the handler's value — once set,
+    -- the useparent walk returns the button's own value and never reaches
+    -- the handler. In combat, SetAttribute on buttons is blocked, so we
+    -- can't clear a stale button-level actionpage, and the walk is
+    -- permanently stuck on the old value (root cause of the in-combat
+    -- stuck-icon bug). By setting only the handler, the buttons always
+    -- read the handler's current value (updated by the driver in combat).
     local page = GetActionBarPage() or 1
     local fp = page
     if page == 1 then
@@ -375,11 +292,39 @@ function MobileUIActionFlip.ApplyFlip()
     if logStr ~= lastFlipLog then
         lastFlipLog = logStr
         MobileUI_Debug(logStr)
+        if MobileDB and MobileDB.debug and fp > (NUM_ACTIONBAR_PAGES or 6) then
+            ButtonStateDump("stealth")
+        end
     end
-    RefreshScatterButtons()
+    -- Set actionpage on the HANDLER (not the buttons) out of combat.
+    -- The buttons read actionpage via the useparent walk:
+    --   button -> MainMenuBarArtFrame -> handler
+    -- Setting actionpage directly on the BUTTONS would shadow the handler's
+    -- value — once set, SecureButton_GetModifiedAttribute returns the
+    -- button's own value and never walks to the handler. In combat,
+    -- SetAttribute on buttons is silently blocked, so we can't clear a
+    -- stale button-level actionpage, and the walk is permanently stuck
+    -- on the old value. By setting only the handler, the buttons always
+    -- read the handler's current value (updated by the driver in combat).
+    --
+    -- Also clear any stale actionpage on the buttons from prior sessions
+    -- where the old code pushed it directly. This is a no-op if the button
+    -- has no own actionpage (the normal case after this fix).
+    if not InCombatLockdown() then
+        for i = 1, 10 do
+            local btn = _G["ActionButton" .. i]
+            if btn and btn:GetAttribute("actionpage") ~= nil then
+                btn:SetAttribute("actionpage", nil)
+            end
+        end
+        if flipBarFrame then
+            flipBarFrame:SetAttribute("actionpage", fp)
+        end
+    end
     local b1 = _G["ActionButton1"]
     if b1 then
-        local attrLog = "Flip: attr1=" .. tostring(SecureButton_GetModifiedAttribute(b1, "actionpage"))
+        -- Read the effective actionpage for diagnostics.
+        local attrLog = "Flip: attr1=" .. tostring(SecureButton_GetModifiedAttribute(b1, "actionpage", b1))
         if attrLog ~= lastFlipAttrLog then
             lastFlipAttrLog = attrLog
             MobileUI_Debug(attrLog)
@@ -390,51 +335,27 @@ end
 function MobileUIActionFlip.EnsureFlipWatcher()
     if flipFrame then return end
     flipFrame = CreateFrame("Frame")
+    -- Page/bonus/stealth events only: the client's own buttons handle the
+    -- display events (ACTIONBAR_UPDATE_USABLE/STATE/COOLDOWN,
+    -- PLAYER_TARGET_CHANGED, UNIT_SPELLCAST_*, etc.) natively now that
+    -- OnEvent is intact. This frame is a fast path for the page mirror +
+    -- diagnostics; the 0.25s guard poll is the reliable fallback (async
+    -- driver updates, unstealth kick).
     flipFrame:RegisterEvent("ACTIONBAR_PAGE_CHANGED")
     flipFrame:RegisterEvent("UPDATE_BONUS_ACTIONBAR")
     flipFrame:RegisterEvent("UPDATE_STEALTH")
     flipFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
-    flipFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-    flipFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
-    flipFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-    -- The buttons re-render from their stale self.action on these, so we
-    -- redraw right after their handlers run (our registration is newer,
-    -- so we dispatch after them) to kill the one-frame stale flicker at
-    -- combat transitions.
-    flipFrame:RegisterEvent("PLAYER_ENTER_COMBAT")
-    flipFrame:RegisterEvent("PLAYER_LEAVE_COMBAT")
-    flipFrame:RegisterEvent("ACTIONBAR_UPDATE_USABLE")
-    flipFrame:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN")
-    flipFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
-    -- Cast boundaries: the flash (golden casting glow) is re-asserted by
-    -- RefreshScatterButtons from IsCurrentAction. These events guarantee a
-    -- refresh at cast start AND cast end even for spells with no cooldown
-    -- (which fire no ACTIONBAR_UPDATE_COOLDOWN), so the glow can't latch on.
-    flipFrame:RegisterEvent("UNIT_SPELLCAST_START")
-    flipFrame:RegisterEvent("UNIT_SPELLCAST_STOP")
-    flipFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
-    flipFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_START")
-    flipFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
     flipFrame:SetScript("OnEvent", function(self, event, ...)
-        -- Combat-safe: ApplyFlip only touches non-protected regions (icon
-        -- texture, NormalTexture vertex color, Cooldown frame). These taint
-        -- the button, but OnEvent is cleared at apply so the client never
-        -- calls self:Show()/self:Hide() on the tainted button mid-combat.
-        -- The actionpage attribute is owned by the SecureStateDriver bridge.
         MobileUI_Debug(string.format("Flip evt: %s off=%d page=%d combat=%d",
             event, GetBonusBarOffset() or 0, GetActionBarPage() or 1,
             InCombatLockdown() and 1 or 0))
         MobileUIActionFlip.ApplyFlip()
-        -- We own the scatter display (OnEvent cleared): RefreshScatterButtons
-        -- redraws icon/tint/cooldown from the bridge's actionpage attribute.
-        -- No per-frame redraw needed -- event/poll-driven is sufficient.
     end)
 end
 
 -- Guard tick: called every frame from MobileUIGuard's OnUpdate. Handles the
 -- 0.25s flip state poll (stance/stealth detection, unstealth display flip,
--- diagnostic probes) and the per-frame flash re-assert. Pure Lua — safe
--- during combat lockdown.
+-- diagnostic probes). Pure Lua — safe during combat lockdown.
 local flipPollT = 0
 local flipState, flipOff, flipPrevState
 
@@ -442,32 +363,57 @@ function MobileUIActionFlip.OnGuardTick(elapsed)
     -- Flip state check (0.25s throttle). The stance/stealth events
     -- (UPDATE_BONUS_ACTIONBAR / UPDATE_SHAPESHIFT_FORM) DO fire on
     -- Ascension (confirmed in-game), so flip detection is event-driven
-    -- via flipFrame above. This poll is kept for two reasons: (1) the
-    -- unstealth branch runs ChangeActionBarPage(1), empirically
-    -- required for the in-combat unstealth display flip; (2) it
-    -- re-asserts ApplyFlip when the bridge's actionpage attribute
-    -- updates asynchronously (driver 0.2s throttle / event re-eval).
+    -- via flipFrame above. This poll is the DISPLAY FIX: the buttons'
+    -- stock UPDATE_BONUS_ACTIONBAR OnEvent fires BEFORE the flipFrame's
+    -- OnEvent (ApplyFlip), so the buttons read STALE actionpage from the
+    -- handler and set self.action to the PREVIOUS state's value (one state
+    -- behind). The poll detects the a1 change (after the handler's
+    -- actionpage is updated by ApplyFlip or the driver) and directly sets
+    -- self.action to the CORRECT value + updates the icon via SetTexture.
+    -- Both are non-tainting (self.action is a plain Lua field, SetTexture
+    -- on the stock icon is verified safe). The client's subsequent event
+    -- handlers (UPDATE_USABLE, UPDATE_COOLDOWN) read self.action and
+    -- update tint/cooldown correctly.
+    -- NOTE: ChangeActionBarPage is NOT used — the Ascension client's driver
+    -- processes ACTIONBAR_PAGE_CHANGED synchronously, so any page toggle
+    -- corrupts the handler's actionpage (e.g. page 6 -> actionpage 6).
     -- The bonus bar's in-combat hide is handled by the busy clear
-    -- in the guard (client's own HideBonusActionBar becomes instant); the
-    -- unstealth branch probes that it worked.
+    -- in the guard (client's own HideBonusActionBar becomes instant).
     flipPollT = flipPollT + elapsed
     if flipPollT >= 0.25 then
         flipPollT = 0
         local page = GetActionBarPage() or 1
         local off = GetBonusBarOffset() or 0
-        -- Include the resolved actionpage attribute: the bridge
-        -- updates it asynchronously (driver 0.2s throttle / event
-        -- re-eval), so re-run ApplyFlip when IT changes too, not
-        -- just when page/off move.
+        -- Include the resolved actionpage attribute for diagnostics:
+        -- re-run ApplyFlip when it changes too, not just when page/off move.
         local b1 = _G["ActionButton1"]
-        local a1 = b1 and SecureButton_GetModifiedAttribute(b1, "actionpage") or "?"
+        -- Read the effective actionpage (self attribute, then the useparent
+        -- walk: button -> MainMenuBarArtFrame -> handler).
+        local a1 = b1 and SecureButton_GetModifiedAttribute(b1, "actionpage", b1) or "?"
+        -- Diagnostics: read handler attrs directly to see if the driver updated
+        local hAP = flipBarFrame and flipBarFrame:GetAttribute("actionpage") or "?"
+        local hSAP = flipBarFrame and flipBarFrame:GetAttribute("state-actionpage") or "?"
+        local mgrShown = _G["SecureStateDriverManager"] and _G["SecureStateDriverManager"]:IsShown() or "?"
         local state = string.format("%d|%d|%s", page, off, tostring(a1))
+        -- Periodic combat diagnostic: log handler attrs every ~1s during combat
+        -- even when state doesn't change, to see if the driver ever updates.
+        if InCombatLockdown() then
+            flipCombatDiagT = (flipCombatDiagT or 0) + 0.25
+            if flipCombatDiagT >= 1.0 then
+                flipCombatDiagT = 0
+                MobileUI_Debug(string.format("Flip combat-diag: hAP=%s hSAP=%s mgrShown=%s off=%d a1=%s",
+                    tostring(hAP), tostring(hSAP), tostring(mgrShown), off, tostring(a1)))
+            end
+        else
+            flipCombatDiagT = 0
+        end
         if state ~= flipState then
             local prevOff = flipOff
             flipState = state
             flipOff = off
-            MobileUI_Debug(string.format("Flip poll: %s->%s combat=%d",
-                flipPrevState or "?", state, InCombatLockdown() and 1 or 0))
+            MobileUI_Debug(string.format("Flip poll: %s->%s combat=%d hAP=%s hSAP=%s mgrShown=%s",
+                flipPrevState or "?", state, InCombatLockdown() and 1 or 0,
+                tostring(hAP), tostring(hSAP), tostring(mgrShown)))
             flipPrevState = state
             -- On unstealth (bonus offset 1->0):
             -- 1) ChangeActionBarPage(1) here is what makes the
@@ -485,23 +431,57 @@ function MobileUIActionFlip.OnGuardTick(elapsed)
             --    event. The probe below verifies it: bonusShown
             --    should read 0 here (already hidden) or drop at
             --    +0.5s. If it persists to +3s the hypothesis failed.
+            -- Kick: NO ChangeActionBarPage. The Ascension client's driver
+            -- processes ACTIONBAR_PAGE_CHANGED SYNCHRONOUSLY, so any page
+            -- toggle corrupts the handler's actionpage (e.g. page 6 ->
+            -- actionpage 6). Instead, directly fix self.action + icon.
+            --
+            -- Root cause of the one-state-behind bug: the buttons' stock
+            -- UPDATE_BONUS_ACTIONBAR OnEvent fires BEFORE the flipFrame's
+            -- OnEvent (ApplyFlip), so the buttons read the STALE actionpage
+            -- from the handler and set self.action to the PREVIOUS state's
+            -- value. The poll detects the a1 change (after the handler's
+            -- actionpage is updated by ApplyFlip or the driver) and directly
+            -- sets self.action to the CORRECT value + updates the icon via
+            -- SetTexture. Both are non-tainting (self.action is a plain Lua
+            -- field, SetTexture on the stock icon is verified safe). The
+            -- client's subsequent event handlers (UPDATE_USABLE, UPDATE_COOLDOWN)
+            -- read self.action and update tint/cooldown correctly.
+            -- This fires on EVERY state change, both in and out of combat.
+            local kickMsg = string.format("Flip kick: off=%d prevOff=%s a1=%s",
+                off, tostring(prevOff), tostring(a1))
+            for i = 1, 10 do
+                local btn = _G["ActionButton" .. i]
+                if btn then
+                    local ap = SecureButton_GetModifiedAttribute(btn, "actionpage", btn) or 1
+                    local action = btn:GetID() + (ap - 1) * (NUM_ACTIONBAR_BUTTONS or 12)
+                    -- Fix self.action (plain Lua field, non-tainting)
+                    btn.action = action
+                    -- Fix icon texture (SetTexture on stock icon, non-tainting)
+                    local icon = _G[btn:GetName() .. "Icon"]
+                    if icon and action then
+                        icon:SetTexture(GetActionTexture(action))
+                    end
+                end
+            end
+            MobileUI_Debug(kickMsg)
+
+            -- Diagnostics for specific transitions
             if off == 0 and prevOff and prevOff > 0 then
+                -- Unstealth diagnostics: bonus bar hide probe
                 local bf = BonusActionBarFrame
                 local mmb = MainMenuBar
                 local shown = bf and bf:IsShown() and 1 or 0
                 local mmbShown = mmb and mmb:IsShown() and 1 or 0
                 local busy = mmb and tostring(mmb.busy) or "?"
                 local parent = (bf and bf:GetParent() and (bf:GetParent():GetName() or "?")) or "?"
-                local ok = pcall(ChangeActionBarPage, 1)
                 MobileUI_Debug(string.format(
-                    "Flip unstealth: bonusShown=%d mmbShown=%d busy=%s parent=%s off=%d changePage=%s",
-                    shown, mmbShown, busy, parent, off, tostring(ok)))
+                    "Flip unstealth: bonusShown=%d mmbShown=%d busy=%s parent=%s off=%d",
+                    shown, mmbShown, busy, parent, off))
                 if MobileDB and MobileDB.debug then
                     SlotDump("after-unstealth")
                     ButtonStateDump("unstealth")
                     DelayedDump(1.0, "unstealth+1s")
-                    -- Probe: sample bf visibility + busy every 0.5s for
-                    -- 4s to catch when the client's hide finally runs.
                     local probe = CreateFrame("Frame")
                     local pt, pi = 0, 0
                     probe:SetScript("OnUpdate", function(self, el)
@@ -519,15 +499,12 @@ function MobileUIActionFlip.OnGuardTick(elapsed)
                     end)
                     probe:Show()
                 end
+            elseif off > 0 and prevOff and prevOff == 0 then
+                if MobileDB and MobileDB.debug then
+                    ButtonStateDump("stealth-poll")
+                end
             end
             MobileUIActionFlip.ApplyFlip()
         end
     end
-    -- Flash re-assert (every frame, incl. combat): the client's
-    -- ActionButton_UpdateFlash never runs (OnEvent cleared) and cast
-    -- events are unreliable on this server, so the casting glow
-    -- latches on after a cast. Re-assert it here from the attribute-
-    -- resolved action so it turns off within a frame of the cast
-    -- ending. Taint-safe: Flash is a plain texture region.
-    ReassertFlash(elapsed)
 end

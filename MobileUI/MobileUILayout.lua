@@ -65,7 +65,12 @@ local BAG_BUTTONS = {
     "CharacterBag2Slot", "CharacterBag3Slot", "KeyRingButton",
 }
 local HIDE_FRAMES = {
-    "MainMenuBar", "MainMenuBarArtFrame", "MainMenuExpBar",
+    -- NOTE: MainMenuBar + MainMenuBarArtFrame are NOT here — the scatter
+    -- buttons 1-10 stay children of MainMenuBarArtFrame (never reparented:
+    -- SetParent taints secure buttons and blocks the client's mid-combat
+    -- Show()). The guard PARKS both off-screen (shown) instead of hiding
+    -- them, so the arc renders while the bar art stays invisible.
+    "MainMenuExpBar",
     "ReputationWatchBar", "ActionBarUpButton", "ActionBarDownButton",
     "MainMenuBarPageNumber", "MultiBarBottomRight",
     "MultiBarLeft", "MultiBarRight",

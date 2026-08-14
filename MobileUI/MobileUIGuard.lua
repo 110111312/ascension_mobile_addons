@@ -1,11 +1,13 @@
 -- MobileUIGuard.lua - Hide bottom-bar art + OnUpdate guard
--- Hides the stock main menu bar, extra action bars, and bonus action bar,
--- and parks the bottom-left bar's tail buttons (6-12) off-screen. Runs a
--- per-frame guard OnUpdate that re-hides everything the client re-shows,
--- re-asserts the stance/stealth flip poll + flash re-assert (delegated to
--- MobileUIActionFlip), and keeps MultiBarBottomLeft shown (its scatter
--- buttons are children). Pauses protected-frame enforcement during combat
--- lockdown to avoid taint.
+-- Hides the stock extra action bars and bonus action bar, PARKS the stock
+-- main menu bar + art frame off-screen (shown — the scatter buttons 1-10
+-- stay children of MainMenuBarArtFrame, never reparented, so a hidden
+-- parent would hide them), and parks the bottom-left bar's tail buttons
+-- (6-12) off-screen. Runs a per-frame guard OnUpdate that re-hides
+-- everything the client re-shows, re-asserts the stance/stealth flip poll
+-- (delegated to MobileUIActionFlip), and keeps MultiBarBottomLeft shown
+-- (its scatter buttons are children). Pauses protected-frame enforcement
+-- during combat lockdown to avoid taint.
 
 MobileUIGuard = {}
 
@@ -67,11 +69,34 @@ local function ParkBar2Tail()
     end
 end
 
+-- Park MainMenuBar + MainMenuBarArtFrame off-screen (SHOWN) instead of
+-- hiding them: the scatter buttons 1-10 stay children of MainMenuBarArtFrame
+-- (never reparented — SetParent on a secure button taints it and blocks the
+-- client's mid-combat Show(), the phase-3/4 error). A hidden parent would
+-- hide the buttons; a parked (shown) parent keeps them rendering at their
+-- UIParent-anchored arc positions while the bar art stays off-screen.
+-- MainMenuBarArtFrame is anchored to MainMenuBar, so parking MainMenuBar
+-- parks both. SetPoint on a protected frame is clean here (the strip
+-- buttons 66-71 and arc 11-15 are SetPoint'd the same way with zero errors).
+local mmbSavedPoints
+local function ParkMainMenuBar()
+    local mmb = _G["MainMenuBar"]
+    if mmb then
+        if not mmbSavedPoints then mmbSavedPoints = MobileUILayout.SavePoints(mmb) end
+        mmb:ClearAllPoints()
+        mmb:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", -3000, -3000)
+        if not mmb:IsShown() then mmb:Show() end
+    end
+    local art = _G["MainMenuBarArtFrame"]
+    if art and not art:IsShown() then art:Show() end
+end
+
 function MobileUIGuard:Apply()
     for _, name in ipairs(HIDE_FRAMES) do
         local f = _G[name]
         if f then f:Hide() end
     end
+    ParkMainMenuBar()
     EnsureBarShown()
     HideBar2Tail()
     ParkBar2Tail()
@@ -112,6 +137,21 @@ function MobileUIGuard:Apply()
                 local f = _G[name]
                 if f and f:IsShown() then f:Hide() end
             end
+            -- MainMenuBar + MainMenuBarArtFrame: keep SHOWN + parked (the
+            -- scatter buttons 1-10 are children of MainMenuBarArtFrame; a
+            -- hidden parent hides them, and the client re-shows/re-anchors
+            -- the bar). Re-park only if the client moved it back on-screen.
+            local mmb = _G["MainMenuBar"]
+            if mmb then
+                if not mmb:IsShown() then mmb:Show() end
+                local l = mmb:GetLeft()
+                if l and l > -1000 then
+                    mmb:ClearAllPoints()
+                    mmb:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", -3000, -3000)
+                end
+            end
+            local art = _G["MainMenuBarArtFrame"]
+            if art and not art:IsShown() then art:Show() end
             -- BonusActionBarFrame hide (out of combat only): belt-and-
             -- suspenders for the MainMenuBar.busy clear at the top of this
             -- OnUpdate. The busy clear is what makes the client's own
@@ -158,4 +198,16 @@ function MobileUIGuard:Revert()
         local f, sv = _G[name], saved.hides and saved.hides[name]
         if f and sv then f:Show() end
     end
+    -- Restore MainMenuBar + MainMenuBarArtFrame: un-park (back on the stock
+    -- anchor chain) and show.
+    local mmb = _G["MainMenuBar"]
+    if mmb then
+        if mmbSavedPoints then
+            RestorePoints(mmb, mmbSavedPoints)
+            mmbSavedPoints = nil
+        end
+        mmb:Show()
+    end
+    local art = _G["MainMenuBarArtFrame"]
+    if art then art:Show() end
 end

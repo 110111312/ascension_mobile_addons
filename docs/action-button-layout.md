@@ -92,11 +92,13 @@ to the scatter buttons and the keys work.
 
 **Problem:** on this Ascension client the Lua-visible action-bar page
 (`GetActionBarPage()`) stays **pinned at 1** in stealth — the client resolves
-keypresses internally (C-side). The reparented scatter buttons therefore never
-recomputed on their own: display and click stayed on page-1 actions while a
-keypress (e.g. `-` bound to `ACTIONBUTTON11`) targeted the stealth bar. The
-addon itself never pinned the page (verified: zero references to page/action
-APIs before the fix).
+keypresses internally (C-side). The scatter buttons (never reparented, stock
+`OnEvent`) therefore only recompute on the events they register
+(`UPDATE_SHAPESHIFT_FORM` etc.), and the client's own page management never
+moves them to the bonus page: display and click stayed on page-1 actions
+while a keypress (e.g. `-` bound to `ACTIONBUTTON11`) targeted the stealth
+bar. The addon itself never pinned the page (verified: zero references to
+page/action APIs before the fix).
 
 **What the stealth bar actually is (empirically verified):** the client does
 **not** flip to action-bar page 2 — pages 2–5 are completely empty in stealth.
@@ -123,10 +125,17 @@ the `flipFrame` event watcher is a fast path on top.
      (this client's stealth/stance mechanism — the same condition stock
      `BonusActionBarFrame` uses to show itself).
   3. Otherwise → 1.
-- The follower sets the `actionpage` **attribute** on each `ActionButton1–12`
-  (a self attribute overrides the parent chain in
-  `ActionButton_CalculateAction`), then refreshes the buttons. Display **and**
-  click now follow the same slots the keypress targets.
+- The bridge sets the `actionpage` **attribute** on `MainMenuBarArtFrame` —
+  the buttons' STOCK parent (the buttons are never reparented: `SetParent`
+  on a secure button taints it and blocks the client's own mid-combat
+  `Show()`, the phase-3/4 error). A `SecureStateDriver` on the art frame
+  re-evaluates the condition every 0.2s + on bonus/stealth/page events and
+  securely writes `state-actionpage` (even in combat); the art frame's
+  `OnAttributeChanged` (stock `SecureHandler_StateOnAttributeChanged`)
+  runs the `_onstate-actionpage` snippet copying it to `actionpage`. The
+  buttons' stock `useparent-actionpage` walk (or the client's own actionpage
+  writes) then resolves the same page in `ActionButton_CalculateAction`.
+  Display **and** click follow the same slots the keypress targets.
 - **Never write plain Lua fields on the buttons** (`isBonus`, `action`): doing
   so **taints** the secure action chain on this client — the next click errors
   with "AddOn 'MobileUI' tainted the call of the secure function 'UseAction()'"
@@ -136,11 +145,11 @@ the `flipFrame` event watcher is a fast path on top.
   leaves it stuck on the bonus page after unstealth (keys then keep casting
   stealth slots). Display is identical either way (page 1).
 - `SetAttribute` works during combat lockdown on this client (verified via
-  diagnostics) — **no combat deferral** is needed. Mid-combat refreshes draw
-  icons directly (`RefreshScatterButtons`): `ActionButton_UpdateAction` calls
-  protected `Show()`/`Hide()`, so in combat the refresh resolves the page
-  exactly as `ActionButton_CalculateAction` will at click time and sets the
-  icon texture (textures aren't protected).
+  diagnostics) — **no combat deferral** is needed. Display is client-owned
+  (stock `OnEvent` kept, Direction A), so mid-combat the client's own event
+  dispatch re-renders from the bridge's attribute; the addon never calls
+  `ActionButton_UpdateAction` in combat (it hits protected `Show()`/`Hide()`
+  from addon context — blocked + taints).
 
 **The unstealth key-stall bug (root cause, fixed):** this client shows
 `BonusActionBarFrame` on stealth but **never hides it on unstealth** — the
@@ -193,64 +202,60 @@ transition (bonus offset 1→0):
   no event fires, but without it the bar froze on stealth skills when
   unstealthing during combat.
 
-**Combat display ownership:** the scatter buttons' `OnEvent` is **cleared** at
-apply (see below), so the client never dispatches `ActionButton_Update` on
-them — which means it never calls `self:Show()/self:Hide()` (blocked on our
-tainted buttons mid-combat) and never renders icon/tint/cooldown. The addon
-owns the display via `RefreshScatterButtons`, triggered by `flipFrame` events
-(`UPDATE_BONUS_ACTIONBAR`, `UPDATE_SHAPESHIFT_FORM`, `ACTIONBAR_UPDATE_COOLDOWN`,
-etc.) and the 0.25s guard poll — **not per-frame**: the cooldown spiral is
-widget-internal after `SetCooldown`, so event-driven re-sync is enough. It
-redraws from the attr-resolved page: icon texture, usability tints
-(`IsUsableAction` vertex colors — the old per-frame `RefreshScatterCombat`
-that did this was removed in phase 4; the event/poll-driven re-assert replaced
-it), and the cooldown (`GetActionCooldown` with `enable == 1`). The flash
-(attack glow) is re-asserted **every frame** by `ReassertFlash()` in
-the guard `OnUpdate` (runs in combat too, before the lockdown early-return):
-with `OnEvent` cleared the client's `ActionButton_UpdateFlash` never runs and
-cast events are unreliable on this server, so the `IsCurrentAction`-driven
-`stateflash` latched at 1 after a cast and the glow stuck forever. It
-recomputes from the attr-resolved action and `Show()/Hide()`s the Flash
-texture directly (plain texture region — taint-safe). Per user preference the
-red flash (`UI-QuickslotRed`) is **auto-attack / auto-shot only, and only
-while actually active**: `IsCurrentAction(action) and (IsAttackAction(action)
-or IsAutoRepeatAction(action))`. The type checks are SLOT-CONTENT checks (1
-whenever the attack/auto-shot ability is in the slot), so they must be ANDed
-with `IsCurrentAction` (1 while the repeating action is actually repeating) —
-otherwise the attack button glows red permanently. It is NOT shown for spell
-casts; the casting feedback is the checked-state ring below. The flash also
-**blinks** (stock behavior) instead of staying solid: a 0.5s timer in
-`ReassertFlash` toggles the texture visibility while a flash is active, and
-resets to "on" when idle so the glow appears immediately at attack start. It
-also clears a **latched checked state**: the client checks the
-button while casting (the casting highlight) but the uncheck runs via the
-OnEvent-driven `ActionButton_UpdateState`, which is cleared at apply — so the
-checked glow (`RoundButtonChecked`/`Border` — the "light yellow border" the
-user saw) stuck forever. `SetChecked(nil)` runs whenever the action is not
-currently being cast (`IsCurrentAction`), making the glow transient — shows
-during the cast, gone after (`SetChecked` is a plain state setter, not a
-protected call — taint-safe).
-`UNIT_SPELLCAST_START/STOP/SUCCEEDED` + `UNIT_SPELLCAST_CHANNEL_*`
-are also registered on `flipFrame` for immediate icon/tint/cooldown re-sync
-at cast boundaries (they fire on this server; the per-frame re-assert is the
-reliable fallback for the flash).
+**Combat display ownership (Direction A — client-owned):** the scatter
+buttons keep their stock `OnEvent` (never cleared) and are **never
+reparented** — they stay children of `MainMenuBarArtFrame`, which the guard
+parks off-screen (shown) so the arc renders at its UIParent-anchored
+positions while the bar art stays invisible. The client renders icon /
+usable tint / cooldown / checked state / attack flash / C-side proc glow
+natively — exactly like the dynamic strip (66–71) and the arc's own 11–15
+buttons, which have always run client-owned with zero combat taint. The
+addon never writes the stock regions' vertex colors or cooldown
+(`SetVertexColor` on the icon/NormalTexture and `SetCooldown` on the
+Cooldown frame taint the button, and the client's later mid-combat
+`Show()`/`Hide()` on a tainted button is blocked — the phase-3/4 failure
+mode). The page mirroring is done purely via the bridge's `actionpage`
+attribute on `MainMenuBarArtFrame` (the driver re-evaluates in the secure
+phase, before the button's `OnEvent` runs), and the client's own `OnEvent`
+(`UPDATE_SHAPESHIFT_FORM` → `ActionButton_UpdateAction`) re-resolves and
+re-renders the flip natively, in and out of combat. The addon never calls
+`ActionButton_UpdateAction` itself: it hits protected `Show()`/`Hide()`
+from addon context, which taints the button and re-blocks the client's
+`Show()` (the phase-3/4 error).
 
-**Why `OnEvent` is cleared (taint, learned in-game):** the client's
-`ActionButton_Update` resolves `self.action` from the `actionpage` attribute,
-but on a detected-while-stealthed form transition it runs *before* the bridge's
-state driver updates that attribute, leaving a stale (stealth) `self.action`.
-Fixing the resulting gray tint requires `SetVertexColor` — which **taints** the
-button on this client. With `OnEvent` intact, the client then calls
-`self:Show()` on the tainted button mid-combat, which is blocked
-(`AddOn 'MobileUI' prevented the call of the secure function
-'ActionButton1:Show()'`). Clearing `OnEvent` stops the client from dispatching
-those updates at all, so the blocked `Show()`/`Hide()` never happens — and the
-addon's own display ops (vertex colors, cooldown), while they do taint the
-button, never surface because the client no longer touches the button in
-combat. `showgrid=1` is also set so non-event client code paths don't hide
-empty slots. Phase 3's `flipLite` test only covered stealth toggles (no taint);
-the detected-in-combat form transition is what triggers the blocked
-`self:Show()`.
+This replaced the old hand-rolled display layer (`RefreshScatterButtons` +
+per-frame `ReassertFlash`), which had drifted from stock:
+- the usable tint never refreshed on retarget — the out-of-combat refresh
+  called `ActionButton_UpdateAction`, a no-op when the slot's action hadn't
+  changed (retarget changes usability, not the action), so a frozen-target
+  spell stayed gray;
+- `ReassertFlash` hid the Flash texture every frame unless the action was an
+  active auto-attack/auto-shot, killing the client's C-side proc glow (e.g.
+  an Ascension talent's "3rd cast empowered" border flash);
+- the checked-state clear (`SetChecked(nil)`) was a band-aid for the
+  casting highlight latching — stock `ActionButton_UpdateState` (via
+  `ACTIONBAR_UPDATE_STATE`) already unchecks natively.
+
+With stock `OnEvent` back, all of these — and every other case (mounts,
+vehicles, inventory changes, equipment borders, stack counts, the range dot,
+procs) — are handled by the client's own event dispatch, the same path the
+default action bar uses.
+
+**Why `OnEvent` is kept (Direction A):** the phase-3/4 taint cascade
+(blocked `self:Show()` mid-combat) was **self-inflicted** — it happened
+because the addon wrote `SetVertexColor`/`SetCooldown` on the stock regions
+AND reparented the buttons (`SetParent` on a secure button taints it on
+this client), and the client's later `Show()`/`Hide()` on the tainted
+button was then blocked. The dynamic strip (66–71) and the arc's own 11–15
+buttons are LBF-skinned with stock `OnEvent` intact, never reparented, and
+have zero combat taint — the proof that client-owned display is clean. The
+stale-`self.action` race at a detected-while-stealthed form transition is
+now self-healing: the bridge's driver updates the attribute in the secure
+phase (before the button's `OnEvent` runs), and the client's own `OnEvent`
+re-resolves and re-renders. A brief stale frame at the transition is
+acceptable (the default UI has the same behavior with the bonus bar).
+`showgrid=1` is still set so non-event client code paths don't hide empty
+slots.
 
 ## Keybind Summary
 

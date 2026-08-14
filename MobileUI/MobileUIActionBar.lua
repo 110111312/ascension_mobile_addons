@@ -37,7 +37,14 @@ function MobileUIActionBar:Apply()
         local btn = _G["ActionButton" .. i]
         if btn then
             local cfg = ACTION_BUTTONS[i]
-            btn:SetParent(UIParent)
+            -- NOT reparented (Direction A): SetParent on a secure button
+            -- taints it on this client, which blocks the client's own
+            -- ActionButton_Update self:Show() mid-combat (the phase-3/4
+            -- error). The buttons stay children of MainMenuBarArtFrame,
+            -- which the guard parks off-screen (shown) so the arc renders
+            -- at these UIParent-anchored positions while the bar art stays
+            -- invisible — exactly like the strip buttons (66-71) and arc
+            -- 11-15, which are never reparented and never taint.
             btn:ClearAllPoints()
             btn:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", cfg.x, cfg.y)
             btn:SetSize(cfg.size, cfg.size)
@@ -59,26 +66,26 @@ function MobileUIActionBar:Apply()
             if nm then nm:Hide() end
             if hotkey then HOTKEY_FRAMES[#HOTKEY_FRAMES+1] = hotkey end
             if nm then HOTKEY_FRAMES[#HOTKEY_FRAMES+1] = nm end
-            -- showgrid=1: keep empty buttons visible. With OnEvent cleared
-            -- the client never hides them via its update, but showgrid also
-            -- guards against non-event client code paths that hide empty slots.
+            -- showgrid=1: keep empty buttons visible (the client's Update
+            -- hides empty slots when showgrid==0).
             btn:SetAttribute("showgrid", 1)
             btn:SetScript("OnEnter", NoActionTooltipOnEnter)
-            -- OnEvent CLEARED: the client's ActionButton_Update calls
-            -- self:Show()/self:Hide() on these reparented buttons. On THIS
-            -- client that call is blocked mid-combat once the button is
-            -- tainted by our display ops (SetVertexColor on the icon/Normal-
-            -- Texture taints the button -- confirmed in-game: phase 4 left
-            -- OnEvent intact and saw no taint for stealth toggles, but the
-            -- detected-in-combat form transition triggers a self:Show() that
-            -- IS blocked: "prevented the call of the secure function
-            -- 'ActionButtonN:Show()'"). Clearing OnEvent stops the client
-            -- from dispatching those updates at all, so the blocked Show/Hide
-            -- never happens. We own the display via RefreshScatterButtons
-            -- (event/poll-driven, not per-frame -- the cooldown spiral is
-            -- widget-internal after SetCooldown, so event-driven sync is
-            -- enough).
-            btn:SetScript("OnEvent", nil)
+            -- Register UPDATE_BONUS_ACTIONBAR so the button's stock OnEvent
+            -- calls ActionButton_UpdateAction on stealth entry/unstealth
+            -- (stock line 369). Stock ActionButton_OnLoad does NOT register
+            -- this event, so without it the button never re-resolves the
+            -- action when the bonus bar changes — the icon stays stale.
+            btn:RegisterEvent("UPDATE_BONUS_ACTIONBAR")
+            -- OnEvent KEPT (Direction A): the client owns the display — icon,
+            -- usable tint, cooldown, checked state, attack flash and the
+            -- C-side proc glow all update natively, exactly like the dynamic
+            -- strip (66-71) and the arc's own 11-15 buttons, which run
+            -- client-owned with zero combat taint. The addon never writes the
+            -- stock regions' vertex colors or cooldown (those taint the button
+            -- and block the client's mid-combat Show()/Hide()); the page
+            -- mirroring is done via the bridge's actionpage attribute
+            -- (MobileUIActionFlip), and the flip poll kicks a stock
+            -- re-resolution out of combat.
             MobileUI_Debug("  ActionButton" .. i .. " skinned")
         else
             MobileUI_Debug("  ActionButton" .. i .. " NOT FOUND")
@@ -144,7 +151,11 @@ function MobileUIActionBar:Revert()
         local sv = saved.actions and saved.actions[i]
         if btn and sv then
             UnskinButton(btn)
-            btn:SetParent(sv.parent)
+            -- Only reparent if the button actually left its stock parent
+            -- (Direction A never reparents, so this is normally a no-op —
+            -- but the SetParent CALL itself taints a secure button, so skip
+            -- it when the parent is already correct).
+            if btn:GetParent() ~= sv.parent then btn:SetParent(sv.parent) end
             btn:SetSize(sv.w, sv.h)
             RestorePoints(btn, sv.points)
             if sv.normalTex then
@@ -165,6 +176,7 @@ function MobileUIActionBar:Revert()
             if nm and sv.nameShown then nm:Show() end
             btn:SetScript("OnEnter", sv.onEnter)
             btn:SetScript("OnEvent", sv.onEvent)
+            btn:UnregisterEvent("UPDATE_BONUS_ACTIONBAR")
             btn:SetAttribute("showgrid", sv.showgrid or 0)
         end
     end
@@ -175,7 +187,7 @@ function MobileUIActionBar:Revert()
         local sv = saved.actions2 and saved.actions2[i]
         if btn and sv then
             UnskinButton(btn)
-            btn:SetParent(sv.parent)
+            if btn:GetParent() ~= sv.parent then btn:SetParent(sv.parent) end
             btn:SetSize(sv.w, sv.h)
             RestorePoints(btn, sv.points)
             if sv.normalTex then
@@ -197,7 +209,7 @@ function MobileUIActionBar:Revert()
             btn:SetScript("OnEnter", sv.onEnter)
         end
     end
-    -- Drop the SecureStateDriver bridge (the buttons were reparented back
-    -- to their stock parents above, so the handler frames are childless).
+    -- Drop the SecureStateDriver bridge (restore MainMenuBarArtFrame's
+    -- parent and clear useparent-actionpage forwarding).
     MobileUIActionFlip.UninstallFlipBridge()
 end
