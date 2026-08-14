@@ -321,6 +321,22 @@ function MobileUIActionFlip.ApplyFlip()
             flipBarFrame:SetAttribute("actionpage", fp)
         end
     end
+    -- Set self.action directly on each button (plain Lua field, non-tainting).
+    -- The buttons' stock UPDATE_BONUS_ACTIONBAR OnEvent fires BEFORE the
+    -- flipFrame's OnEvent (this function), so the buttons read STALE
+    -- actionpage from the handler and may set self.action to the wrong
+    -- value. By setting self.action here (during event dispatch, before
+    -- ACTIONBAR_UPDATE_USABLE fires), the client's ActionButton_UpdateUsable
+    -- reads the CORRECT self.action and tints properly. Without this, the
+    -- client tints grey based on the stale stealth self.action, and the
+    -- tint stays wrong until the next ACTIONBAR_UPDATE_USABLE event (which
+    -- can take seconds).
+    for i = 1, 10 do
+        local btn = _G["ActionButton" .. i]
+        if btn then
+            btn.action = btn:GetID() + (fp - 1) * (NUM_ACTIONBAR_BUTTONS or 12)
+        end
+    end
     local b1 = _G["ActionButton1"]
     if b1 then
         -- Read the effective actionpage for diagnostics.
