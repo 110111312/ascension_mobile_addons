@@ -99,10 +99,6 @@ local function BuildPicker()
     title:SetPoint("TOPLEFT", picker, "TOPLEFT", 14, -10)
     title:SetText("Quick use — tap to use")
 
-    local hint = picker:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    hint:SetPoint("TOPLEFT", picker, "TOPLEFT", 14, -26)
-    hint:SetText("Out of combat only")
-
     local close = CreateFrame("Button", nil, picker)
     close:SetSize(24, 24)
     close:SetPoint("TOPRIGHT", picker, "TOPRIGHT", -8, -8)
@@ -305,13 +301,17 @@ end
 -- ============================================================================
 -- Launcher button (circular, game icon, far right)
 -- ============================================================================
-local function BuildLauncher()
+local function BuildLauncher(size)
     launcher = CreateFrame("Button", "MobileUIQuickUseLauncher", UIParent)
+    -- Size BEFORE skinning: LBF computes the skin scale from the button's
+    -- size at AddButton time, so a 0x0 button gets a 36px circle / 23px icon
+    -- that never grows — the launcher then renders as a small circle inside
+    -- a bigger square instead of matching the strip buttons.
+    launcher:SetSize(size or 55, size or 55)
     launcher.icon = launcher:CreateTexture(nil, "ARTWORK")
-    launcher.icon:SetAllPoints(launcher)
     launcher.icon:SetTexture("Interface\\Icons\\Spell_Nature_Lightning")
-    launcher.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    -- Circular skin, same as the strip / menu bar buttons.
+    -- No SetAllPoints: LBF sizes/centers the icon (Icon layer) itself, so
+    -- the raw texture can never cover the circular skin.
     if MobileUILayout and MobileUILayout.SkinButton then
         MobileUILayout.SkinButton(launcher, { Icon = launcher.icon })
     end
@@ -325,7 +325,7 @@ end
 function MobileUIQuickUse:Apply()
     if not MobileDB or not MobileDB.layoutEnabled then return end
     if active then return end
-    if not launcher then BuildLauncher() end
+    if not launcher then BuildLauncher(size) end
     -- NOTE: never write `X and Y()` in a multi-return assignment — the `and`
     -- truncates the call to its first value. Call StripGeometry directly.
     local size, pitch, x0, y
@@ -343,8 +343,8 @@ function MobileUIQuickUse:Apply()
         x0 + LAUNCH_SLOT * pitch, y)
     launcher:Show()
     active = true
-    Log(string.format("launcher applied at strip slot %d (x=%.0f y=%.0f size=%d)",
-        LAUNCH_SLOT, x0 + LAUNCH_SLOT * pitch, y, size))
+    Log(string.format("launcher applied at strip slot %d (x=%.0f y=%.0f size=%d icon=%.0f)",
+        LAUNCH_SLOT, x0 + LAUNCH_SLOT * pitch, y, size, launcher.icon:GetWidth() or 0))
 end
 
 function MobileUIQuickUse:Revert()
