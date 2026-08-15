@@ -16,6 +16,7 @@ local PLAYER_HIDE     = MobileUILayout.PLAYER_HIDE
 local PLAYER_OVERLAY  = MobileUILayout.PLAYER_OVERLAY
 local PLAYER_TEXT     = MobileUILayout.PLAYER_TEXT
 local PARTY_MEMBER_FRAMES = MobileUILayout.PARTY_MEMBER_FRAMES
+local MENU_SCALE     = MobileUILayout.MENU_SCALE
 local PARTY_SCALE     = MobileUILayout.PARTY_SCALE
 local UnskinButton    = MobileUILayout.UnskinButton
 
@@ -129,7 +130,15 @@ function MobileUIFrames.ApplyMenuBar()
     menuBar:ClearAllPoints()
     menuBar:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -8, -8)
     menuBar:SetSize(200, 70)
+    -- Effective scale 1.15 (at the fixed global 1.2 the menu overlapped the
+    -- player buffs at the top-right corner). Relative to the UIParent scale.
+    menuBar:SetScale(MENU_SCALE / UIParent:GetScale())
     menuBar:Show()
+    -- Diagnostic: log the menu bar's actual rendered edges (UIParent units,
+    -- from the top of the screen) so overlap reports can be verified.
+    MobileUI_Debug(string.format("  MENUBAR: top=%.0f bottom=%.0f w=%.0f h=%.0f scale=%.3f",
+        menuBar:GetTop(), menuBar:GetBottom(),
+        menuBar:GetWidth(), menuBar:GetHeight(), menuBar:GetScale()))
 
     -- 2 rows: first 6 buttons in top row, last 6 in bottom row
     local xOffset = 0
@@ -417,9 +426,12 @@ function MobileUIFrames.ApplyPartyFrames()
         partyFrame:SetFrameStrata("LOW")
     end
     partyFrame:ClearAllPoints()
-    -- TOPRIGHT -20,-80: right edge aligned with button 15's column (right
-    -- edge at -20), top 2 units below the menu bar's bottom edge (y=78).
-    partyFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -20, -90)
+    -- TOPRIGHT -20,-140: right edge aligned with button 15's column (right
+    -- edge at -20); moved down from -90 (v2.9.x) then -115 so member 1 clears
+    -- the menu bar — the menu still overlapped the first party member at
+    -- -115 on the phone stream, so the container sits lower. PARTY_SCALE
+    -- 0.55 renders a bit larger than 0.5 while still fitting the strip.
+    partyFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -20, -140)
     -- Container must have explicit size: 128 = PartyMemberFrame width,
     -- 242 = total unscaled stack height (4 frames at 53 + 3 gaps at ~10).
     -- Without this, the 0×0 container puts TOPLEFT at the right screen edge,
@@ -429,6 +441,14 @@ function MobileUIFrames.ApplyPartyFrames()
     partyFrame:Show()
 
     ReparentPartyFrames()
+
+    -- Diagnostic: log the container's and member 1's actual rendered edges
+    -- (UIParent units, from the top of the screen) so overlap reports can be
+    -- verified against the menu bar's logged position.
+    local m1 = _G["PartyMemberFrame1"]
+    MobileUI_Debug(string.format("  PARTY: container top=%.0f bottom=%.0f scale=%.2f member1 top=%.0f",
+        partyFrame:GetTop(), partyFrame:GetBottom(), partyFrame:GetScale(),
+        m1 and m1:GetTop() or -1))
 
     -- Re-assert timer: the client may re-parent or re-anchor frames on
     -- party events (PARTY_MEMBERS_CHANGED, disconnect, etc.). Periodically

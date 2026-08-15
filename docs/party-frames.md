@@ -44,15 +44,17 @@ members join/leave.
 All four `PartyMemberFrame1-4` are **reparented into a single container**
 frame (`MobileUIPartyFrame`) that the layout positions and scales:
 
-1. **Container anchor:** `TOPRIGHT` of `UIParent` at `(-20, -80)` — right
+1. **Container anchor:** `TOPRIGHT` of `UIParent` at `(-20, -140)` — right
    edge aligned with the action arc's rightmost column (button 15's right
-   edge is also at -20), top 2 units below the 2-row menu bar (its bottom
-   edge is at y=78: TOPRIGHT -8,-8, 180×70).
-2. **Container scale:** `PARTY_SCALE = 0.5`. On the 1128×634 screen the
-   strip between the menu bar (bottom y=78 from top) and button 15 (top
-   y=367 from bottom) is **~189 units** tall. Four members chain at 83
-   units each (322 total) plus the ~73-unit content overhang below the last
-   member → ~161 units rendered at 0.5 → fits with ~26 units of margin.
+   edge is also at -20). Moved down from `-90` (v2.9.x) then `-115` because
+   the menu bar still overlapped member 1 on the phone stream; `-140` puts
+   member 1 well below the 2-row menu bar (bottom edge at y≈75 at its
+   effective 1.15 scale, see `menu-bar.md`).
+2. **Container scale:** `PARTY_SCALE = 0.55` — a touch larger than the
+   original 0.5. The container scale also scales the internal pet frame /
+   debuff rows / fonts uniformly. (If the stack ever clips arc button 15 at
+   the bottom with a full 4-member party, ease `PARTY_SCALE` back toward
+   0.5.)
 3. **Only frame 1 is re-anchored** (`TOPLEFT` of the container at 0,0).
    Frames 2-4 keep their stock pet-frame-relative anchors, so a member's
    pet still pushes the members below it down correctly, and the whole
@@ -98,8 +100,11 @@ the client owns it and corrects it on the next `PARTY_MEMBERS_CHANGED`.
 ```lua
 local PARTY_MEMBER_FRAMES = { "PartyMemberFrame1", "PartyMemberFrame2",
                               "PartyMemberFrame3", "PartyMemberFrame4" }
-local PARTY_SCALE = 0.5   -- 4 members ≈ 161 units in the ~189-unit strip
+local MENU_SCALE  = 1.15  -- 2x6 menu bar effective scale (was 1.2, overlapped buffs)
+local PARTY_SCALE = 0.55  -- container TOPRIGHT offset is -20,-140
 ```
 
-Tune `PARTY_SCALE` / the container `TOPRIGHT` offset to taste (0.55 ≈ 177
-units — tight; 0.5 keeps margin).
+Tune `PARTY_SCALE` / the container `TOPRIGHT` offset to taste. `ApplyMenuBar`
+and `ApplyPartyFrames` log the actual rendered edges (`MENUBAR: top/bottom`,
+`PARTY: container top/bottom, member1 top`) to the `MobileUIDebugLog` ring
+buffer — check `/mui debug` if overlap reports don't match the numbers here.

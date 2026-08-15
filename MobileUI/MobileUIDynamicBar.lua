@@ -929,7 +929,6 @@ end
 
 function MobileUIDynamicBar:Apply()
     if active then return end
-    if not MobileDB or not MobileDB.dynamicBar then return end
     if not MobileDB.layoutEnabled then
         MobileUI_Debug("DynamicBar: skipped (layout disabled)")
         return
@@ -984,8 +983,4 @@ function MobileUIDynamicBar:Revert()
     MobileUI_Debug("DynamicBar: reverted (strip buttons re-parked)")
 end
 
-function MobileUIDynamicBar:Toggle()
-    MobileDB.dynamicBar = not MobileDB.dynamicBar
-    if MobileDB.dynamicBar then self:Apply() else self:Revert() end
-    return MobileDB.dynamicBar
-end
+

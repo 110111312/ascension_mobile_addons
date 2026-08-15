@@ -42,18 +42,23 @@ local ACTION2_BUTTONS = {
 -- pet frame (PartyFrame.xml) — a vertical column on the LEFT side, which on
 -- this layout collides with the quest tracker under the map. The layout
 -- reparents all four into a scaled container parked in the empty strip on
--- the right edge: below the 2-row menu bar (TOPRIGHT -8,-8, 200x70 -> bottom
--- at y=78 from top) and above the top of the action arc, button 15
--- (BOTTOMRIGHT -20,316, 51x51 -> top at y=367 from bottom). On the 1128x634
--- screen that strip is ~189 units tall; 4 members chain at 83 units each
--- (322 total) plus the ~73-unit content overhang, so 0.5 scale -> ~161 units
--- fits with margin. The container scale also scales the internal pet frame /
+-- the right edge: below the 2-row menu bar (TOPRIGHT -8,-8, 200x70 at
+-- effective scale 1.15 -> bottom at y=75 from top) and above the top of the
+-- action arc, button 15 (BOTTOMRIGHT -20,316, 51x51 -> top at y=367 from
+-- bottom). The container sits at TOPRIGHT -20,-140 (moved down from -90/
+-- -115 because the menu still overlapped member 1 on the phone stream) at
+-- PARTY_SCALE 0.55. The container scale also scales the internal pet frame /
 -- debuff rows / fonts uniformly.
 local PARTY_MEMBER_FRAMES = {
     "PartyMemberFrame1", "PartyMemberFrame2",
     "PartyMemberFrame3", "PartyMemberFrame4",
 }
-local PARTY_SCALE = 0.5
+-- Effective scale of the 2x6 micro-button menu bar. The fixed global scale
+-- (1.2) made the menu overlap the player buffs at the top-right corner;
+-- 1.15 clears them. Applied as MENU_SCALE / UIParent:GetScale() so the menu
+-- renders at effective 1.15 on top of the fixed global scale.
+local MENU_SCALE  = 1.15
+local PARTY_SCALE = 0.55
 local MICRO_BUTTONS = {
     "CharacterMicroButton", "SpellbookMicroButton", "TalentMicroButton",
     "AchievementMicroButton", "QuestLogMicroButton", "SocialsMicroButton",
@@ -110,7 +115,8 @@ local PLAYER_TEXT = {
 MobileUILayout.ACTION_BUTTONS    = ACTION_BUTTONS
 MobileUILayout.ACTION2_BUTTONS   = ACTION2_BUTTONS
 MobileUILayout.PARTY_MEMBER_FRAMES = PARTY_MEMBER_FRAMES
-MobileUILayout.PARTY_SCALE        = PARTY_SCALE
+MobileUILayout.MENU_SCALE          = MENU_SCALE
+MobileUILayout.PARTY_SCALE         = PARTY_SCALE
 MobileUILayout.MICRO_BUTTONS      = MICRO_BUTTONS
 MobileUILayout.BAG_BUTTONS        = BAG_BUTTONS
 MobileUILayout.HIDE_FRAMES        = HIDE_FRAMES

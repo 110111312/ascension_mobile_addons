@@ -151,22 +151,6 @@
                 </Scripts>
             </CheckButton>
 
-            <CheckButton name="$parentDynamicBarCheck" inherits="OptionsCheckButtonTemplate">
-                <Anchors>
-                    <Anchor point="TOPLEFT" relativeTo="$parentBagSwapCheck" relativePoint="BOTTOMLEFT">
-                        <Offset><AbsDimension x="0" y="-8"/></Offset>
-                    </Anchor>
-                </Anchors>
-                <Scripts>
-                    <OnLoad>
-                        _G[self:GetName().."Text"]:SetText("Dynamic Action Bar (tap = use, hold = assign items/buffs)")
-                    </OnLoad>
-                    <OnClick>
-                        MobileUI_OptionsOnDynamicBarChanged(self:GetChecked())
-                    </OnClick>
-                </Scripts>
-            </CheckButton>
-
         </Frames>
     </Frame>
 

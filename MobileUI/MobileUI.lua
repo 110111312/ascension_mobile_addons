@@ -23,7 +23,6 @@ local DEFAULTS = {
     tapBuy       = true,  -- true = tap a merchant item to buy it directly
     tapEquip     = true,  -- true = tap an equippable item (armor/weapon) to equip it
     bagSwap      = true,  -- true = tap/hold a bag to pick which slot it goes into
-    dynamicBar   = true,  -- true = bottom-left dynamic action bar (tap=use, hold=assign)
 }
 
 -- ============================================================================
@@ -220,16 +219,6 @@ SlashCmdList["MOBILEUI"] = function(msg)
             (enabled and "ON" or "OFF") ..
             " (tap armor/weapons to equip them out of combat).")
 
-    elseif cmd == "dynamicbar" then
-        local enabled = MobileUIDynamicBar:Toggle()
-        if enabled and not MobileDB.layoutEnabled then
-            print("|cff00ccff[MobileUI]|r Dynamic Action Bar ON (enable /mui layout to show it).")
-        else
-            print("|cff00ccff[MobileUI]|r Dynamic Action Bar " ..
-                (enabled and "ON" or "OFF") ..
-                " (tap = use, hold a button to assign items/buffs).")
-        end
-
     else
         print("|cff00ccff[MobileUI]|r Scale: 1.2 (fixed; minimap 1.25)" ..
             " | chat: " .. (MobileDB.chatHidden and "hidden" or "shown") ..
@@ -239,9 +228,8 @@ SlashCmdList["MOBILEUI"] = function(msg)
             " | sell: " .. (MobileDB.tapSell and "on" or "off") ..
             " | buy: " .. (MobileDB.tapBuy and "on" or "off") ..
             " | equiptap: " .. (MobileDB.tapEquip and "on" or "off") ..
-            " | bagswap: " .. (MobileDB.bagSwap and "on" or "off") ..
-            " | dynamicbar: " .. (MobileDB.dynamicBar and "on" or "off"))
-        print("|cff00ccff[MobileUI]|r Usage: /mui chat | /mui look <10-90> | /mui layout | /mui tap | /mui sell | /mui buy | /mui equiptap | /mui bagswap | /mui dynamicbar | /mui debug | /mui debugclear")
+            " | bagswap: " .. (MobileDB.bagSwap and "on" or "off"))
+        print("|cff00ccff[MobileUI]|r Usage: /mui chat | /mui look <10-90> | /mui layout | /mui tap | /mui sell | /mui buy | /mui equiptap | /mui bagswap | /mui debug | /mui debugclear")
     end
 end
 
@@ -265,8 +253,6 @@ function MobileUI_OptionsOnShow(panel)
     if equipCheck then equipCheck:SetChecked(MobileDB.tapEquip) end
     local bagSwapCheck = _G[name .. "BagSwapCheck"]
     if bagSwapCheck then bagSwapCheck:SetChecked(MobileDB.bagSwap) end
-    local dynCheck = _G[name .. "DynamicBarCheck"]
-    if dynCheck then dynCheck:SetChecked(MobileDB.dynamicBar) end
 end
 
 function MobileUI_OptionsOnLookSpeedChanged(value)
@@ -332,16 +318,6 @@ function MobileUI_OptionsOnBagSwapChanged(checked)
         MobileUIBagSwap:Apply()
     else
         MobileUIBagSwap:Revert()
-    end
-end
-
-function MobileUI_OptionsOnDynamicBarChanged(checked)
-    if not MobileDB then return end
-    MobileDB.dynamicBar = checked and true or false
-    if MobileDB.dynamicBar then
-        MobileUIDynamicBar:Apply()
-    else
-        MobileUIDynamicBar:Revert()
     end
 end
 

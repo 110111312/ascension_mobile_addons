@@ -62,10 +62,20 @@ end
 -- stay children of MultiBarBottomLeft, so slot resolution (61-72) is untouched.
 local function ParkBar2Tail()
     for i = 6, 12 do
-        local b = _G["MultiBarBottomLeftButton" .. i]
-        if b then
-            b:ClearAllPoints()
-            b:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", -3000, -3000)
+        -- The dynamic action bar owns buttons 6-11 while enabled: the strip
+        -- is anchored at apply time, and on a layout RE-apply
+        -- (PLAYER_ENTERING_WORLD fires on every zone change / dungeon entry)
+        -- DynamicBar:Apply() early-returns when already active — so parking
+        -- its buttons here would leave the strip parked off-screen and
+        -- invisible until /reload. Skip them, exactly like HideBar2Tail.
+        if MobileUIDynamicBar and MobileUIDynamicBar.TailUsed and MobileUIDynamicBar.TailUsed(i) then
+            -- dynamic bar owns this button; leave it on the strip
+        else
+            local b = _G["MultiBarBottomLeftButton" .. i]
+            if b then
+                b:ClearAllPoints()
+                b:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", -3000, -3000)
+            end
         end
     end
 end

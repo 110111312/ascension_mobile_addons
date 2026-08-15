@@ -3,9 +3,8 @@
 A mobile "totem-style" bar in the empty strip between the bag button and the
 player health/mana frame. **Tap = use, hold = assign.**
 
-Feature: `MobileUIDynamicBar.lua` (v2.9.0). Toggle: `/mui dynamicbar` or
-Interface Options → MobileUI → "Dynamic Action Bar". Default: **on** (only
-visible while the layout is enabled).
+Feature: `MobileUIDynamicBar.lua` (v2.9.0). Always **on** while the layout is
+enabled — no toggle (the on/off option was removed).
 
 ## Why slots, not proxies
 
@@ -39,8 +38,13 @@ client renders icon / cooldown / stack count / usable tint natively.
   (exposed for this module).
 - The layout guard's per-frame `HideBar2Tail` **skips** buttons owned by the
   dynamic bar (`MobileUIDynamicBar.TailUsed(i)`), so the strip stays visible
-  through the combat re-show; the rest of the tail (12) stays parked
-  off-screen as before.
+  through the combat re-show; the rest of the tail (12) stays parked off-screen
+  as before. `ParkBar2Tail` (apply-time) skips them too — without that, a
+  layout **re-apply** (`PLAYER_ENTERING_WORLD` fires on every zone change /
+  dungeon entry) would re-park the strip off-screen while `DynamicBar:Apply`
+  early-returns as already active, leaving the strip invisible until `/reload`
+  (the arc survives re-applies because `MobileUIActionBar:Apply` re-anchors
+  unconditionally and the guard never moves the arc buttons' own anchors).
 
 ## Gestures
 
@@ -192,8 +196,8 @@ just work.
 ## Persistence / revert
 
 Assignments live in the **client's action-bar save data** (slots 66–71), so
-they survive reload/logout for free. Revert (`/mui dynamicbar off` or layout
-revert) re-parks the strip buttons off-screen exactly as the layout left the
+they survive reload/logout for free. Layout revert re-parks the strip buttons
+off-screen exactly as the layout left the
 tail, **uns skins** them, but **leaves the slot contents in place** — they are
 the player's own action slots (the layout revert also restores the tail's
 original anchors and shown state from `saved.bar2tail`).
@@ -219,11 +223,10 @@ original anchors and shown state from `saved.bar2tail`).
 
 ## Controls
 
-- Default: **on**
-- Toggle: `/mui dynamicbar`
-- Interface Options → MobileUI → "Dynamic Action Bar (tap = use, hold =
-  assign items/buffs)"
-- Saved var: `MobileDB.dynamicBar`
+- Always **on** while the layout is enabled — no toggle, no option.
+- The strip renders only when `MobileDB.layoutEnabled` is true (the layout
+  apply drives it via `MobileUIDynamicBar:Apply()`); there is no separate
+  saved var.
 
 ## Debug log (ring buffer only, no chat prints)
 
