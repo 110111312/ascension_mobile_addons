@@ -124,6 +124,44 @@ local function BuildPicker()
     picker:SetFrameLevel(catcher:GetFrameLevel() + 2)
 end
 
+-- Hover tooltip, same as the dynamic bar picker. The quick-use picker sits
+-- on the RIGHT side of the screen, so the tooltip anchors LEFT of the cell
+-- (ANCHOR_RIGHT would push it off the right edge). OnEnter/OnLeave are plain
+-- hover scripts — they never run on the click event, so the secure fire
+-- stays taint-clean (same category as the proven-safe OnMouseDown/OnMouseUp).
+local function ShowEntryTooltip(cell, entry)
+    if not entry then return end
+    local ok, err = pcall(function()
+        GameTooltip:SetOwner(cell or picker, "ANCHOR_LEFT")
+        if entry.kind == "item" then
+            if entry.c and entry.s then
+                GameTooltip:SetBagItem(entry.c, entry.s)
+            else
+                GameTooltip:SetItemByID(entry.id)
+            end
+        elseif entry.kind == "macro" then
+            -- No macro tooltip API in 3.3.5a; show the name as a fallback.
+            GameTooltip:SetText(entry.name or "Macro", 1, 1, 1)
+        elseif entry.spellbookID then
+            if GameTooltip.SetSpell then
+                GameTooltip:SetSpell(entry.spellbookID, "spell")
+            elseif GameTooltip.SetSpellBookItem then
+                GameTooltip:SetSpellBookItem(entry.spellbookID, "spell")
+            elseif entry.spellID then
+                GameTooltip:SetSpellByID(entry.spellID)
+            end
+        end
+        GameTooltip:Show()
+    end)
+    if not ok then
+        Log("tooltip ERROR: " .. tostring(err))
+    end
+end
+
+local function HideEntryTooltip()
+    if GameTooltip then GameTooltip:Hide() end
+end
+
 -- Get (or lazily create) the n-th secure row. Rows are pooled so repeated
 -- opens don't churn frame creation.
 local function GetRow(n)
@@ -139,13 +177,17 @@ local function GetRow(n)
         row.label:SetPoint("LEFT", row.icon, "RIGHT", 4, 0)
         row.label:SetPoint("RIGHT", row, "RIGHT", -2, 0)
         row.label:SetJustifyH("LEFT")
+        -- Match the dynamic bar picker's look: transparent background, no
+        -- visible border (gold edge at alpha 0, same as the dyn picker's
+        -- un-armed cells), hover highlight for feedback. All plain visuals —
+        -- they never touch the secure click path.
         row:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8X8",
             edgeFile = "Interface\\Buttons\\WHITE8X8",
-            edgeSize = 1,
+            edgeSize = 2,
+            insets = { left = 1, right = 1, top = 1, bottom = 1 },
         })
-        row:SetBackdropColor(0.1, 0.1, 0.1, 0.9)
-        row:SetBackdropBorderColor(0.6, 0.6, 0.6, 0.8)
+        row:SetBackdropBorderColor(1, 0.82, 0, 0)
+        row:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
         -- Log the click landing (the spike's make-or-break check: the click
         -- must reach the row for the secure fire to run).
         row:SetScript("OnMouseDown", function(self, button)
@@ -160,6 +202,11 @@ local function GetRow(n)
                 DeferClosePicker()
             end
         end)
+        -- Hover tooltip (same as the dynamic bar picker).
+        row:SetScript("OnEnter", function(self)
+            ShowEntryTooltip(self, self.entry)
+        end)
+        row:SetScript("OnLeave", HideEntryTooltip)
         rows[n] = row
     end
     return row
@@ -197,6 +244,7 @@ local function PopulateRows()
                 colX + sc * (CELL_W + CELL_GAP), -44 - HEADER_H - r * rowH)
             row:SetSize(CELL_W, cellH)
             row.entryName = e.name
+            row.entry = e
             row.label:SetText(e.name or "")
             -- Cap the icon to the cell so a shrunk row never overflows it.
             local iconSize = math.max(16, math.min(32, cellH - 4))
