@@ -376,6 +376,7 @@ function MobileUILayout:Apply()
     -- Dynamic action bar (bottom-left strip): runs after the tail is parked
     -- so it can re-anchor buttons 6-10 from the parked spot to the strip.
     step("ApplyDynamicBar", function() MobileUIDynamicBar:Apply() end)
+    step("ApplyQuickUse", function() MobileUIQuickUse:Apply() end)
     step("ApplyArcAssign", function() MobileUIArcAssign:Apply() end)
     -- Wrapped in a closure so a nil MobileUIWorldMap is caught by step()'s pcall
     -- and logged as "ERROR in ApplyWorldMap" instead of aborting Apply silently.
@@ -394,6 +395,7 @@ function MobileUILayout:Revert()
     -- Dynamic bar first: it re-parks its strip buttons (6-10), then
     -- RevertHideFrames restores the whole tail from saved.bar2tail.
     if MobileUIDynamicBar and MobileUIDynamicBar.Revert then MobileUIDynamicBar:Revert() end
+    if MobileUIQuickUse and MobileUIQuickUse.Revert then MobileUIQuickUse:Revert() end
     if MobileUIArcAssign and MobileUIArcAssign.Revert then MobileUIArcAssign:Revert() end
     MobileUIGuard:Revert()
     MobileUIFrames.RevertMap()

@@ -103,6 +103,7 @@ MobileUIDynamicBar = {}
 local usedButtons = {}   -- [btnIndex] = true while the strip is active
 local active     = false
 local pendingDefer = nil
+local lastSize, lastPitch, lastX0, lastY -- strip geometry for the quick-use launcher
 
 local menu, clickCatcher, menuTitle, menuHint, closeBtn
 local columns = {}       -- [kind] = { header = fs, cells = {} }
@@ -308,6 +309,7 @@ local function BuildEntries()
                         table.insert(items, {
                             kind = "item", id = id, c = c, s = s,
                             name = name or link, icon = icon, count = count,
+                            link = link, -- for the quick-use picker's secure rows
                         })
                     end
                 end
@@ -490,6 +492,10 @@ local function BuildEntries()
     return out
 end
 
+-- Exposed for the quick-use picker (MobileUIQuickUse): the SAME entry list
+-- (items / spells / mounts / professions / macros).
+MobileUIDynamicBar.BuildEntries = BuildEntries
+
 -- Tooltip preview: hold (right button) on a cell shows the entry's tooltip;
 -- release hides it. Also fires on hover for desktop. Uses the global
 -- GameTooltip (the addon-created one lacks template methods on this client).
@@ -538,6 +544,10 @@ end
 local function ClosePicker()
     if menu then menu:Hide() end
 end
+
+-- Exposed so the quick-use picker can dismiss this one (both use a
+-- full-screen catcher; only one picker should be up at a time).
+MobileUIDynamicBar.ClosePicker = ClosePicker
 
 -- Get (or lazily create) the n-th cell of a category column. Cells are pooled
 -- so repeated opens don't churn frame creation.
@@ -927,6 +937,12 @@ function MobileUIDynamicBar.TailUsed(i)
     return active and usedButtons[i] or nil
 end
 
+-- Strip geometry for the quick-use launcher (MobileUIQuickUse): the launcher
+-- occupies the 6th slot (x0 + 5*pitch), same size as the strip buttons.
+function MobileUIDynamicBar.StripGeometry()
+    return lastSize, lastPitch, lastX0, lastY
+end
+
 function MobileUIDynamicBar:Apply()
     if active then return end
     if not MobileDB.layoutEnabled then
@@ -944,14 +960,17 @@ function MobileUIDynamicBar:Apply()
         MobileUI_Debug(string.format("DynamicBar: no room (count=%d size=%d)", count, size))
         return
     end
-    for k = 1, count do
+    -- The rightmost slot (6th) is the quick-use launcher's spot: the strip
+    -- itself shows 5 buttons (6-10); button 11 returns to the parked tail.
+    for k = 1, count - 1 do
         local i = FIRST_BTN + k - 1
         if ShowButton(i, size, x0, y, pitch) then usedButtons[i] = true end
     end
     active = true
+    lastSize, lastPitch, lastX0, lastY = size, pitch, x0, y
     MobileUI_Debug(string.format(
         "DynamicBar: applied %d button(s) size=%d pitch=%d x0=%.0f y=%.0f",
-        count, size, pitch, x0, y))
+        count - 1, size, pitch, x0, y))
 end
 
 function MobileUIDynamicBar:Revert()

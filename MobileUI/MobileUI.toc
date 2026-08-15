@@ -21,5 +21,6 @@ MobileUIActionFlip.lua
 MobileUIFrames.lua
 MobileUIGuard.lua
 MobileUIDynamicBar.lua
+MobileUIQuickUse.lua
 MobileUIArcAssign.lua
 MobileUIOptions.xml
