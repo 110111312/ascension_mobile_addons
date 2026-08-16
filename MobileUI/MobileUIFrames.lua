@@ -386,6 +386,161 @@ function MobileUIFrames.RevertPlayerFrame()
     end
 end
 
+-- 5a. Exit-Vehicle Button → right of the player frame (P1)
+-- The stock "Leave Vehicle" button (MainMenuBarVehicleLeaveButton) is a
+-- child of MainMenuBar, which the guard PARKS off-screen (SHOWN, at
+-- BOTTOMLEFT -3000,-3000) so the scatter arc's buttons 1-10 keep rendering.
+-- Result: in a vehicle the client shows the leave button
+-- (SetShown(CanExitVehicle()) on the vehicle events) but it renders
+-- off-screen with its parked parent — no way to get out. Fix part 1 — pure
+-- re-anchor, like the scatter buttons: UIParent-relative points are
+-- independent of the parent, so the button renders at its mobile spot while
+-- MainMenuBar stays parked (the scatter buttons prove this pattern; a
+-- PlayerFrame-relative anchor variant was tried and is NOT used — switched
+-- to UIParent to match the proven pattern). Fix part 2 — visibility: this
+-- Ascension client does NOT show the stock leave button itself (diagnosed:
+-- anchor applied, button never appears on vehicle entry — the stock
+-- MainMenuBar_OnEvent SetShown(CanExitVehicle()) path doesn't run here).
+-- The button is a plain (non-secure) button whose stock OnClick calls
+-- VehicleExit(), so the addon can own visibility safely: SetShown on the
+-- vehicle events + a 0.25s poll (same pattern as the stealth flip poll) to
+-- catch missed events. Revert hands visibility back to the client. It's a
+-- plain button, so SetPoint/SetShown/SetWidth are taint-clean.
+MobileUIFrames.VEHICLE_EXIT_OFFSET = 2  -- px gap between the bar block's right edge (x=136 from center) and the button
+
+function MobileUIFrames.AnchorVehicleExitButton()
+    local btn = _G["MainMenuBarVehicleLeaveButton"]
+    if not btn then return end
+    btn:ClearAllPoints()
+    -- UIParent-anchored, snug right of the health/mana bar block. The bars
+    -- are anchored by ApplyPlayerFrame: 272 wide at 4px inset in a 280-wide
+    -- frame centered on x=0, so the block's right edge is at 136 from screen
+    -- center on any resolution. Center the button 2px right of that edge
+    -- (width-adaptive), bottom-aligned with the player frame (y=12).
+    local w = btn:GetWidth() or 32
+    btn:SetPoint("BOTTOM", UIParent, "BOTTOM", 136 + MobileUIFrames.VEHICLE_EXIT_OFFSET + w / 2, 12)
+end
+
+local vehicleFrame, vehicleShown
+
+function MobileUIFrames.UpdateVehicleExitButton(event)
+    local btn = _G["MainMenuBarVehicleLeaveButton"]
+    if not btn then return end
+    local canExit = CanExitVehicle and CanExitVehicle() or nil
+    local inVeh   = UnitInVehicle and UnitInVehicle("player") or nil
+    local hasUI   = UnitHasVehicleUI and UnitHasVehicleUI("player") or nil
+    local show    = (canExit or inVeh) and true or false
+    if btn:IsShown() ~= show then
+        btn:SetShown(show)
+    end
+    -- The client re-anchors this button back to its stock MainMenuBar-relative
+    -- spot on vehicle entry (the bar is parked off-screen, so the button lands
+    -- at ~-2800,-2860 — diagnosed in the ring: btnL/btnT went negative while
+    -- btnShown=1). Re-assert our UIParent anchor whenever the button drifts
+    -- off-screen. Our event handler runs after the client's (registration
+    -- order), so this usually fixes it immediately; the 0.25s poll is the
+    -- backstop for any other timing.
+    local btnL = btn:GetLeft()
+    if btnL and btnL < -1000 then
+        MobileUIFrames.AnchorVehicleExitButton()
+        MobileUI_Debug("Veh: client re-anchored leave button off-screen (btnL=" ..
+            tostring(btnL) .. ") -> re-anchored to mobile spot")
+    end
+    -- Log on explicit events + on vehicle-state changes (the 0.25s poll only
+    -- logs a change, so the ring doesn't spam). Includes the button's exact
+    -- on-screen position (when shown), its normal texture, and PlayerFrame's
+    -- position — the source of truth for where things actually render.
+    if event ~= "POLL" or vehicleShown == nil or vehicleShown ~= show then
+        local vmb = _G["VehicleMenuBar"]
+        local pf = _G["PlayerFrame"]
+        local nt = btn:GetNormalTexture()
+        MobileUI_Debug("Veh: evt=" .. tostring(event) ..
+            " canExit=" .. tostring(canExit) ..
+            " inVeh=" .. tostring(inVeh) ..
+            " ui=" .. tostring(hasUI) ..
+            " btnShown=" .. tostring(btn:IsShown()) ..
+            " btnL=" .. tostring(btn:GetLeft()) ..
+            " btnT=" .. tostring(btn:GetTop()) ..
+            " btnTex=" .. tostring(nt and nt:GetTexture()) ..
+            " btnParent=" .. tostring(btn:GetParent() and btn:GetParent():GetName()) ..
+            " pfL=" .. tostring(pf and pf:GetLeft()) ..
+            " pfT=" .. tostring(pf and pf:GetTop()) ..
+            " vehBar=" .. tostring(vmb and vmb:IsShown()))
+    end
+    vehicleShown = show
+end
+
+function MobileUIFrames.ApplyVehicleExitButton()
+    local btn = _G["MainMenuBarVehicleLeaveButton"]
+    if not btn then
+        MobileUI_Debug("ApplyVehicleExitButton: MainMenuBarVehicleLeaveButton NOT FOUND")
+        return
+    end
+    saved.vehicleExit = { points = SavePoints(btn), origNT = btn:GetNormalTexture() }
+    -- Size to match the health/mana bar block (~29px tall) so the button
+    -- blends with the bars instead of towering over them; 32 is the stock
+    -- button's native texture size (crisp). Anchor AFTER sizing — the anchor
+    -- is width-adaptive (snug right of the bars). Plain button, so sizing is
+    -- taint-clean.
+    btn:SetWidth(32)
+    btn:SetHeight(32)
+    MobileUIFrames.AnchorVehicleExitButton()
+    -- Guarantee visible art: on this Ascension client the stock button may
+    -- have no normal texture (a shown-but-invisible button). If so, set a
+    -- stock icon so the button is always visible; revert restores the
+    -- original (nil) texture.
+    local nt = btn:GetNormalTexture()
+    if not nt or not nt:GetTexture() then
+        local t = btn:CreateTexture(nil, "BACKGROUND")
+        t:SetTexture("Interface\\Icons\\INV_Misc_Arrow_01")
+        t:SetAllPoints(btn)
+        btn:SetNormalTexture(t)
+        MobileUI_Debug("ApplyVehicleExitButton: stock normal texture missing -> set INV_Misc_Arrow_01")
+    end
+    if not vehicleFrame then
+        vehicleFrame = CreateFrame("Frame")
+        vehicleFrame:SetScript("OnEvent", function(_, event)
+            MobileUIFrames.UpdateVehicleExitButton(event)
+        end)
+        vehicleFrame:SetScript("OnUpdate", function(self, elapsed)
+            self.t = (self.t or 0) + elapsed
+            if self.t >= 0.25 then
+                self.t = 0
+                MobileUIFrames.UpdateVehicleExitButton("POLL")
+            end
+        end)
+        for _, ev in ipairs({
+            "UNIT_ENTERED_VEHICLE", "UNIT_ENTERING_VEHICLE",
+            "UNIT_EXITED_VEHICLE", "UNIT_EXITING_VEHICLE",
+            "PLAYER_GAINS_VEHICLE_DATA", "PLAYER_LOSES_VEHICLE_DATA",
+            "PLAYER_ENTERING_WORLD",
+        }) do
+            vehicleFrame:RegisterEvent(ev)
+        end
+    end
+    vehicleFrame:Show()
+    MobileUIFrames.UpdateVehicleExitButton("APPLY")
+    MobileUI_Debug("ApplyVehicleExitButton: re-anchored snug right of bars, size=" ..
+        (btn:GetWidth() or 0) .. "x" .. (btn:GetHeight() or 0) ..
+        ", parent=" .. tostring(btn:GetParent() and btn:GetParent():GetName()))
+end
+
+function MobileUIFrames.RevertVehicleExitButton()
+    local btn = _G["MainMenuBarVehicleLeaveButton"]
+    if not btn or not saved.vehicleExit then return end
+    if vehicleFrame then vehicleFrame:Hide() end
+    vehicleShown = nil
+    -- Remove the fallback texture we added (if any) and hand visibility back
+    -- to the client (one SetShown so the button isn't left stale).
+    if saved.vehicleExit.origNT ~= btn:GetNormalTexture() then
+        btn:SetNormalTexture(saved.vehicleExit.origNT)
+    end
+    if CanExitVehicle then btn:SetShown(CanExitVehicle()) end
+    RestorePoints(btn, saved.vehicleExit.points)
+    saved.vehicleExit = nil
+    MobileUI_Debug("RevertVehicleExitButton: original anchors restored")
+end
+
 -- 5b. Party Frames → right edge, scaled into the strip below the menu bar
 -- Reparents the four PartyMemberFrame buttons into a container we position
 -- and scale. Only frame 1 is re-anchored (TOPLEFT of the container); frames
