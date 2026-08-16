@@ -52,10 +52,7 @@ function MobileUI:CreateChatBubble()
     chatBubble = CreateFrame("Button", "MobileUIChatBubble", UIParent)
     chatBubble:SetSize(32, 32)
     chatBubble:SetFrameStrata("MEDIUM")
-    chatBubble:SetClampedToScreen(true)
-    chatBubble:SetMovable(true)
     chatBubble:RegisterForClicks("LeftButtonUp")
-    chatBubble:RegisterForDrag("LeftButton")
 
     MobileUI:PositionChatBubble()
 
@@ -68,20 +65,10 @@ function MobileUI:CreateChatBubble()
             MobileUI:ToggleChat()
         end
     end)
-    chatBubble:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    chatBubble:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        local point, _, relPoint, x, y = self:GetPoint()
-        MobileDB.bubblePoint    = point
-        MobileDB.bubbleRelPoint = relPoint
-        MobileDB.bubbleX        = x
-        MobileDB.bubbleY        = y
-    end)
     chatBubble:SetScript("OnEnter", function(self)
         if GameTooltip then
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetText(MobileDB.chatHidden and "|cff00ccffShow Chat|r" or "|cff00ccffHide Chat|r", 1, 1, 1)
-            GameTooltip:AddLine("Drag to move.", 0.6, 0.6, 0.6)
             GameTooltip:Show()
         end
     end)
@@ -92,21 +79,14 @@ end
 -- ============================================================================
 -- Bubble positioning
 -- ============================================================================
--- Mobile layout: the bubble sits just above the bag icon.  MobileUIBagButton
--- is at BOTTOMLEFT (10, 10) and is 48x48, so its top edge is y=58; the bubble
--- (32x32) anchors BOTTOMLEFT (10, 62) -> same left edge as the bag, 4px above.
--- Default (layout off): raised above the action bar.
--- A saved drag position (MobileDB.bubbleX/Y) always wins over the defaults.
+-- Fixed position (not draggable): the bubble sits just above the bag icon.
+-- MobileUIBagButton is at BOTTOMLEFT (10, 10) and is 48x48, so its top edge
+-- is y=58; the bubble (32x32) anchors BOTTOMLEFT (10, 62) -> same left edge
+-- as the bag, 4px above.  Layout off: raised above the action bar.
 
 function MobileUI:PositionChatBubble()
     if not chatBubble then return end
     chatBubble:ClearAllPoints()
-    if MobileDB.bubbleX and MobileDB.bubbleY then
-        chatBubble:SetPoint(MobileDB.bubblePoint or "BOTTOMLEFT",
-            UIParent, MobileDB.bubbleRelPoint or "BOTTOMLEFT",
-            MobileDB.bubbleX, MobileDB.bubbleY)
-        return
-    end
     if MobileDB.layoutEnabled then
         -- Just above the bag icon, same left edge (x=10); 4px gap.
         chatBubble:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 10, 62)

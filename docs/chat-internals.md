@@ -86,6 +86,8 @@ FrameXML (`FloatingChatFrame.xml` / `FloatingChatFrame.lua`, `ChatFrame.xml`,
 - The default bottom action bar (`MainMenuBar`) is ~40–43 UI units tall;
   `MobileUI`'s chat-bubble button originally defaulted to `y=52` to clear it.
   With **DragonUI** enabled the bottom action bar is taller and covered the
-  button. Fix: raised the default to `y=72` **and** made the bubble draggable
-  (hold-and-drag; position saved in `MobileDB.bubbleX/Y/Point/RelPoint`) so it
-  clears any bar height.
+  button. The bubble is **fixed** at the coded position (not draggable):
+  layout on → `BOTTOMLEFT (10, 62)` (just above the bag icon), layout off →
+  `BOTTOMLEFT (2, 64)`. The layout-off default must clear the taller DragonUI
+  bar — if a future bar-height change covers it again, raise the `y` default
+  in `MobileUI:PositionChatBubble()` rather than re-adding drag.
